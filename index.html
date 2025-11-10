@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<title>FAIZ Phone – 15键测试(纯HTML)</title>
+<title>FAIZ Phone – 低延迟(纯HTML)</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0b0f19" />
 <style>
@@ -15,7 +15,7 @@
     font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
     background:var(--bg); color:var(--fg);
     -webkit-text-size-adjust:100%;
-    touch-action:manipulation; /* 减少双击缩放 */
+    touch-action:manipulation; /* 防双击放大 */
     -webkit-user-select:none; user-select:none;
   }
   .wrap{max-width:480px;margin:0 auto;padding:16px;min-height:100vh;display:flex;align-items:center;justify-content:center}
@@ -48,11 +48,11 @@
 <body>
 <div class="wrap" id="wrap">
   <div class="card">
-    <h1>FAIZ Phone – 15 键测试（纯HTML）</h1>
+    <h1>FAIZ Phone – 15 键测试（低延迟）</h1>
 
     <div class="display">
       <div class="digits" id="digits">———</div>
-      <div class="hint" id="hint">点任意键解锁音频</div>
+      <div class="hint" id="hint">点任意键解锁并预加载音效</div>
     </div>
 
     <div class="panel" id="panel">
@@ -102,11 +102,11 @@
   const wrapEl   = document.getElementById('wrap');
   const keysEl   = document.getElementById('keys');
 
-  // 本机配置
+  // 本机配置（可被“浏览/管理”覆盖）
   const cfg = (()=>{ try{ return JSON.parse(localStorage.getItem('faiz_cfg_v1')||'{}'); }catch{ return {}; } })();
   const saveCfg = ()=>{ try{ localStorage.setItem('faiz_cfg_v1', JSON.stringify(cfg)); }catch(e){} };
 
-  // —— 默认音效（相对路径，指向仓库 /assets）——
+  // 默认音效（相对路径，指向 /assets）
   const defaults = {
     openPhone:  'assets/open phone.m4a',
     ring:       'assets/ring.m4a',
@@ -123,126 +123,168 @@
   for (const k in defaults) if (!cfg[k]) cfg[k] = defaults[k];
   saveCfg();
 
-  // 音频控制
-  let started=false, ac=null;
-  let fiveCount=0, buf='', armedStand=false, transformed=false;
+  // ===== 低延迟播放器（Web Audio）=====
+  let ac=null, started=false;
+  let masterGain=null;
+  const buffers = new Map();  // key -> AudioBuffer
   let ringNode=null, standNode=null;
 
   function ensureAC(){
     if (ac) return ac;
-    const C = window.AudioContext||window.webkitAudioContext;
-    if (!C) return null;
-    ac = new C();
+    const C = window.AudioContext || window.webkitAudioContext;
+    if(!C) return null;
+    // 倾向低延迟
+    ac = new C({ latencyHint: 'interactive' }); // MDN 推荐用法
+    masterGain = ac.createGain();
+    masterGain.gain.value = 1.0;
+    masterGain.connect(ac.destination);
     return ac;
   }
+
+  async function loadBuffer(key){
+    if (buffers.has(key)) return buffers.get(key);
+    const url = cfg[key];
+    if (!url) return null;
+    // 支持 DataURL 和相对路径
+    const res = await fetch(url);
+    const arr = await res.arrayBuffer();
+    const ctx = ensureAC();
+    const buf = await ctx.decodeAudioData(arr);
+    buffers.set(key, buf);
+    return buf;
+  }
+
+  async function playBuf(key, { loop=false } = {}){
+    const ctx = ensureAC(); if(!ctx) return null;
+    const buf = await loadBuffer(key);
+    if(!buf) return null;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = !!loop;
+    src.connect(masterGain);
+    src.start(0); // 低延迟启动
+    return src;
+  }
+
+  // 兜底 beep（当某个键没文件时）
   function beep(opt){
     const ctx=ensureAC(); if(!ctx) return;
     const o=opt||{}, osc=ctx.createOscillator(), g=ctx.createGain();
     osc.type=o.type||'square'; osc.frequency.value=o.freq||520; g.gain.value=(o.vol==null?0.22:o.vol);
     osc.connect(g).connect(ctx.destination); osc.start();
-    setTimeout(()=>{ try{ g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.05);}catch{} try{osc.stop();}catch{} }, o.ms||140);
+    setTimeout(()=>{ try{osc.stop();}catch{} }, o.ms||120);
   }
-  function playKey(name, loop){
-    const url=cfg[name];
-    if(!url){
-      if(name==='enter')     return beep({freq:560,ms:160,type:'sawtooth',vol:0.26});
-      if(name==='complete')  return beep({freq:260,ms:360,type:'square',vol:0.30});
-      if(name==='standBy')   return beep({freq:720,ms:260,type:'triangle',vol:0.28});
-      return beep({freq:520,ms:120,type:'square',vol:0.24});
-    }
-    try{ const a=new Audio(url); a.loop=!!loop; a.play().catch(()=>{}); return a; }catch{ return; }
-  }
-  function safePause(node){ if (node && typeof node.pause==='function') { try{ node.pause(); }catch{} } }
 
-  function showDigits(s){ const t=(s||'').padStart(3,'—').slice(-3); digitsEl.textContent=t; }
+  // 统一播放入口（优先用 buffer，加载失败再 beep）
+  async function playKey(name, {loop=false} = {}){
+    try{
+      const src = await playBuf(name, { loop });
+      if (!src) {
+        if(name==='enter')     beep({freq:560,ms:160,type:'sawtooth',vol:0.26});
+        else if(name==='complete')  beep({freq:260,ms:360,type:'square',vol:0.30});
+        else if(name==='standBy')   beep({freq:720,ms:260,type:'triangle',vol:0.28});
+        else beep();
+      }
+      return src;
+    }catch(e){ beep(); return null; }
+  }
+
+  function safeStop(node){ if(node && node.stop){ try{ node.stop(0); }catch{} } }
+
+  // ===== 解锁 & 预加载 =====
+  async function unlockAndPreload(){
+    if (started) return;
+    started = true;
+    const ctx = ensureAC();
+    if (ctx.state === 'suspended') { try{ await ctx.resume(); }catch{} }
+
+    hintEl.textContent='已解锁，正在预加载…';
+
+    // 预热：播放一个极短的静音缓冲，帮助后续“零延迟”启动（符合各浏览器策略） 
+    try{
+      const empty = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const node = ctx.createBufferSource(); node.buffer=empty; node.connect(ctx.destination); node.start(0);
+    }catch{}
+
+    // 并行预加载所有键位音频，首触后立即开始
+    const keysToPreload = ['openPhone','ring','enter','key1','key5_2','key5_3','standBy','complete','combo103','combo106','combo3821'];
+    await Promise.all(keysToPreload.map(k=>loadBuffer(k).catch(()=>null)));
+
+    hintEl.textContent='已解锁';
+    // 开机音
+    playKey('openPhone').catch(()=>{});
+  }
+
+  // ===== 规则与 UI =====
+  let fiveCount=0, buf=''; let armedStand=false; let transformed=false;
+
+  function showDigits(s){ digitsEl.textContent=(s||'').padStart(3,'—').slice(-3); }
   function setStatus(t){ statusEl.textContent=t; }
 
-  // 首次触摸解锁 + 播开机音
-  function unlock(){
-    if (started) return;
-    started=true; ensureAC();
-    hintEl.textContent='已解锁';
-    playKey('openPhone');
-  }
+  async function push(k){
+    await unlockAndPreload();
 
-  // 输入逻辑
-  function push(k){
-    unlock();
-    if(k==='*'||k==='#'){ playKey('key1'); return; }
+    if(k==='*'||k==='#'){ await playKey('key1'); return; }
 
     if(k==='5'){
       fiveCount=(fiveCount%3)+1;
-      if     (fiveCount===1) playKey('key1');
-      else if(fiveCount===2) playKey('key5_2');
-      else                   playKey('key5_3');
+      if(fiveCount===1) await playKey('key1');
+      else if(fiveCount===2) await playKey('key5_2');
+      else await playKey('key5_3');
     }else{
-      fiveCount=0; playKey('key1');
+      fiveCount=0; await playKey('key1');
     }
 
     buf=(buf+k).slice(-4); showDigits(buf);
 
-    if(buf.endsWith('103'))  { setStatus('特殊：103');  playKey('combo103'); }
-    if(buf.endsWith('106'))  { setStatus('特殊：106');  playKey('combo106'); }
-    if(buf.endsWith('3821')) { setStatus('特殊：3821'); playKey('combo3821'); }
+    if(buf.endsWith('103'))  { setStatus('特殊：103');  await playKey('combo103'); }
+    if(buf.endsWith('106'))  { setStatus('特殊：106');  await playKey('combo106'); }
+    if(buf.endsWith('3821')) { setStatus('特殊：3821'); await playKey('combo3821'); }
     if(buf.endsWith('555'))  { setStatus('已输入 555'); }
   }
 
-  // ENTER 规则
-  function onEnter(){
-    unlock();
+  async function onEnter(){
+    await unlockAndPreload();
 
-    // 第二次 ENTER：只播 complete，变红并清空
     if (armedStand){
-      safePause(standNode); standNode=null;
-      const a=playKey('complete');
-      const after=()=>{ transformed=true; wrapEl.style.background='var(--bg-red)'; buf=''; showDigits(''); setStatus('完成'); };
-      if(a){ try{ a.onended=after; }catch{ setTimeout(after,380); } } else { setTimeout(after,380); }
+      safeStop(standNode); standNode=null;
+      const src = await playKey('complete');
+      const finish=()=>{ transformed=true; wrapEl.style.background='var(--bg-red)'; buf=''; showDigits(''); setStatus('完成'); };
+      if(src){ src.onended=finish; } else { setTimeout(finish, 380); }
       armedStand=false; return;
     }
 
-    // 第一次 ENTER：总是先播 enter
-    playKey('enter');
+    await playKey('enter');
 
-    // 若末尾是 555：接着播 stand by（不循环），并武装
     if (buf.endsWith('555')){
-      safePause(standNode); standNode=null;
-      const n=playKey('standBy', false);
-      if(n){ try{ n.onended=()=>{ standNode=null; }; }catch{} standNode=n; }
-      armedStand=true; setStatus('Stand by');
+      safeStop(standNode); standNode=null;
+      standNode = await playKey('standBy'); // 不循环
+      if(standNode){ standNode.onended = ()=>{ standNode=null; }; }
+      armedStand=true; setStatus('stand by');
     }else{
       setStatus('ENTER');
     }
   }
 
-  // 铃声
-  function ringStart(){
-    unlock();
-    safePause(ringNode); ringNode=null;
-    const url=cfg['ring'];
-    if(url){ const a=new Audio(url); a.loop=true; a.play().catch(()=>{}); ringNode=a; }
-    else{
-      const id=setInterval(()=>{ beep({freq:660,ms:150,vol:0.18}); setTimeout(()=>beep({freq:550,ms:150,vol:0.18}),170); },320);
-      ringNode={ pause:()=>clearInterval(id) };
-    }
+  async function ringStart(){
+    await unlockAndPreload();
+    safeStop(ringNode); ringNode=null;
+    ringNode = await playKey('ring', { loop:true });
     setStatus('响铃中');
   }
-  function ringStop(){ safePause(ringNode); ringNode=null; setStatus('铃声停止'); }
+  function ringStop(){ safeStop(ringNode); ringNode=null; setStatus('铃声停止'); }
+  async function onUnset(){ await playKey('key1'); transformed=false; wrapEl.style.background='var(--bg)'; setStatus('解除变身'); }
 
-  // 待定：解除变身
-  function onUnset(){ playKey('key1'); transformed=false; wrapEl.style.background='var(--bg)'; setStatus('解除变身'); }
-
-  // 构建键盘
+  // 键盘
   ['1','2','3','4','5','6','7','8','9','*','0','#'].forEach(k=>{
-    const b=document.createElement('button'); b.className='key'; b.textContent=k; b.onclick=()=>push(k); keysEl.appendChild(b);
+    const b=document.createElement('button'); b.className='key'; b.textContent=k; b.onclick=()=>{ push(k); }; keysEl.appendChild(b);
   });
-
-  // 绑定按钮
   document.getElementById('btnEnter').onclick=onEnter;
   document.getElementById('btnRing').onclick=ringStart;
   document.getElementById('btnStop').onclick=ringStop;
   document.getElementById('btnUnset').onclick=onUnset;
 
-  // 管理器
+  // 音效管理（和你之前一致）
   const keyList=[
     ['openPhone','Open phone'],['ring','铃声'],['enter','ENTER'],['key1','普通按键'],
     ['key5_2','5(第二次)'],['key5_3','5(第三次)'],['standBy','Stand by'],
@@ -271,12 +313,14 @@
           <label class="btn">选择文件<input type="file" style="display:none" accept="audio/*" /></label>
           <button class="btn" data-act="preview">试听</button>
           <button class="btn" data-act="clear">清除</button>
-          ${cfg[key]?`<audio controls src="${cfg[key]}" preload="none" style="width:100%;margin-top:6px"></audio>`:''}
         </div>`;
       const input=d.querySelector('input[type=file]');
-      input.onchange=(e)=>{ const f=e.target.files?.[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ cfg[key]=r.result; saveCfg(); refreshPairs(); }; r.readAsDataURL(f); };
-      d.querySelector('[data-act=preview]').onclick=()=>{ const u=cfg[key]; if(!u){ setStatus('未配置：'+key); beep(); return; } try{ new Audio(u).play().catch(()=>{});}catch{} };
-      d.querySelector('[data-act=clear]').onclick=()=>{ delete cfg[key]; saveCfg(); refreshPairs(); };
+      input.onchange=(e)=>{ const f=e.target.files?.[0]; if(!f) return;
+        const r=new FileReader(); r.onload=()=>{ cfg[key]=r.result; saveCfg(); buffers.delete(key); refreshPairs(); };
+        r.readAsDataURL(f);
+      };
+      d.querySelector('[data-act=preview]').onclick=async()=>{ const src=await playKey(key); if(!src) setStatus('未配置：'+key); };
+      d.querySelector('[data-act=clear]').onclick=()=>{ delete cfg[key]; saveCfg(); buffers.delete(key); refreshPairs(); };
       pairsEl.appendChild(d);
     });
   }
@@ -292,27 +336,25 @@
     let matched=0;
     [...files].forEach(f=>{
       const r=new FileReader();
-      r.onload=()=>{ const key=nameMap[ baseNoExt(f.name) ]; if(key){ cfg[key]=r.result; matched++; saveCfg(); refreshPairs(); } };
+      r.onload=()=>{ const key=nameMap[ baseNoExt(f.name) ]; if(key){ cfg[key]=r.result; matched++; saveCfg(); buffers.delete(key); refreshPairs(); } };
       r.readAsDataURL(f);
     });
     setStatus('已选择 '+files.length+' 个文件，自动匹配 '+matched+' 个');
   }
 
-  // 保险：若仍出现缩放手势，强制阻止
+  // 首次用户手势：解锁 + 预加载 + 开机音（iOS autoplay 策略要求有手势）
+  ['pointerdown','touchend','click'].forEach(evt=>{
+    document.addEventListener(evt, ()=>unlockAndPreload(), { once:true, passive:true });
+  });
+
+  // 保险：拦截 iOS 手势缩放
   ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
     document.addEventListener(ev, e=>{ e.preventDefault(); }, {passive:false});
   });
 
-  // 第一次用户手势：解锁 + 播 open phone
-  ['pointerdown','touchend','click'].forEach(evt=>{
-    document.addEventListener(evt, unlock, { once:true, passive:true });
-  });
-})();
-</script>
-
-<!-- 注册 Service Worker（HTTPS 或 localhost 才生效；GitHub Pages 满足） -->
-<script>
+  // 注册 SW（可选；如果你已经有 sw.js，会自动离线缓存）
   'serviceWorker' in navigator && navigator.serviceWorker.register('./sw.js', { scope: './' });
+})();
 </script>
 </body>
 </html>
