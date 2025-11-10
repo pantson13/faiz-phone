@@ -5,6 +5,8 @@
 <meta name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>FAIZ Phone – 15键测试(纯HTML)</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0f19" />
 <style>
   :root{--bg:#0b0f19;--bg-red:#7f1d1d;--fg:#fff;--panel:#0f172a;--border:#334155;--muted:#94a3b8}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -13,7 +15,7 @@
     font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
     background:var(--bg); color:var(--fg);
     -webkit-text-size-adjust:100%;
-    touch-action:manipulation; /* 禁双击缩放 */
+    touch-action:manipulation; /* 减少双击缩放 */
     -webkit-user-select:none; user-select:none;
   }
   .wrap{max-width:480px;margin:0 auto;padding:16px;min-height:100vh;display:flex;align-items:center;justify-content:center}
@@ -54,20 +56,19 @@
     </div>
 
     <div class="panel" id="panel">
-      <!-- 第一行：ENTER 单独一行（与铃声按钮对齐宽度） -->
+      <!-- 第一行：ENTER 单独一行 -->
       <div class="grid3">
         <button class="key" id="btnEnter">ENTER</button>
-        <div></div>
-        <div></div>
-
-        <!-- 第二行：左-铃声 中-待定 右-停止（与 ENTER 同行对齐） -->
+        <div></div><div></div>
+      </div>
+      <!-- 第二行：铃声 / 待定 / 停止 -->
+      <div class="grid3">
         <button class="key" id="btnRing">☎︎ 铃声</button>
         <button class="key" id="btnUnset">待定</button>
         <button class="key" id="btnStop">⛔︎ 停止</button>
       </div>
 
       <div class="status" id="status">待机</div>
-
       <!-- 数字键盘 3×4 -->
       <div class="keys" id="keys"></div>
     </div>
@@ -80,15 +81,15 @@
   </div>
 </div>
 
-<!-- 音效浏览管理（保留，可随时手动覆盖默认映射） -->
+<!-- 音效浏览/管理 -->
 <div class="modal" id="modal">
   <div class="box">
     <div class="row"><div>浏览和管理音效</div><div style="flex:1"></div><button class="btn" id="btnClose">关闭</button></div>
     <div class="row">
-      <label class="btn">批量选择文件<input type="file" id="fileMulti" class="hidden" style="display:none" multiple accept="audio/*" /></label>
-      <div class="muted">按文件名自动匹配：open phone / ring / enter / key1 / key5_2 / key5_3 / stand by / complete / 103 / 106 / 3821</div>
+      <label class="btn">批量选择文件<input type="file" id="fileMulti" style="display:none" multiple accept="audio/*" /></label>
+      <div class="muted">自动匹配：open phone / ring / enter / key1 / key5_2 / key5_3 / stand by / complete / 103 / 106 / 3821</div>
     </div>
-    <div class="drop" id="drop">将音频文件拖到这里，自动匹配并保存</div>
+    <div class="drop" id="drop">点击或拖入音频文件到这里，自动匹配并保存（保存在本机）</div>
     <div id="pairs" class="grid3" style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px"></div>
   </div>
 </div>
@@ -101,28 +102,28 @@
   const wrapEl   = document.getElementById('wrap');
   const keysEl   = document.getElementById('keys');
 
-  // 读取配置
+  // 本机配置
   const cfg = (()=>{ try{ return JSON.parse(localStorage.getItem('faiz_cfg_v1')||'{}'); }catch{ return {}; } })();
   const saveCfg = ()=>{ try{ localStorage.setItem('faiz_cfg_v1', JSON.stringify(cfg)); }catch(e){} };
 
-  // —— 默认音效：首访自动指向 /assets；若用户后来在管理器里改了，将保留用户版
+  // —— 默认音效（相对路径，指向仓库 /assets）——
   const defaults = {
-    openPhone:  '/assets/open phone.m4a',
-    ring:       '/assets/ring.m4a',
-    enter:      '/assets/enter.m4a',
-    key1:       '/assets/key1.m4a',
-    key5_2:     '/assets/key5_2.m4a',
-    key5_3:     '/assets/key5_3.m4a',
-    standBy:    '/assets/stand by.m4a',
-    complete:   '/assets/complete.m4a',
-    combo103:   '/assets/103.m4a',
-    combo106:   '/assets/106.m4a',
-    combo3821:  '/assets/3821.m4a'
+    openPhone:  'assets/open phone.m4a',
+    ring:       'assets/ring.m4a',
+    enter:      'assets/enter.m4a',
+    key1:       'assets/key1.m4a',
+    key5_2:     'assets/key5_2.m4a',
+    key5_3:     'assets/key5_3.m4a',
+    standBy:    'assets/stand by.m4a',
+    complete:   'assets/complete.m4a',
+    combo103:   'assets/103.m4a',
+    combo106:   'assets/106.m4a',
+    combo3821:  'assets/3821.m4a'
   };
   for (const k in defaults) if (!cfg[k]) cfg[k] = defaults[k];
   saveCfg();
 
-  // 音频上下文 & 基本哔声
+  // 音频控制
   let started=false, ac=null;
   let fiveCount=0, buf='', armedStand=false, transformed=false;
   let ringNode=null, standNode=null;
@@ -144,7 +145,6 @@
   function playKey(name, loop){
     const url=cfg[name];
     if(!url){
-      // 兜底哔声
       if(name==='enter')     return beep({freq:560,ms:160,type:'sawtooth',vol:0.26});
       if(name==='complete')  return beep({freq:260,ms:360,type:'square',vol:0.30});
       if(name==='standBy')   return beep({freq:720,ms:260,type:'triangle',vol:0.28});
@@ -157,12 +157,12 @@
   function showDigits(s){ const t=(s||'').padStart(3,'—').slice(-3); digitsEl.textContent=t; }
   function setStatus(t){ statusEl.textContent=t; }
 
-  // 首次触摸解锁 + 自动播开机音
+  // 首次触摸解锁 + 播开机音
   function unlock(){
     if (started) return;
     started=true; ensureAC();
     hintEl.textContent='已解锁';
-    playKey('openPhone'); // 开机音
+    playKey('openPhone');
   }
 
   // 输入逻辑
@@ -191,14 +191,13 @@
   function onEnter(){
     unlock();
 
-    // 已经武装：第二次 ENTER -> 只播 complete，变红并清空
+    // 第二次 ENTER：只播 complete，变红并清空
     if (armedStand){
       safePause(standNode); standNode=null;
       const a=playKey('complete');
       const after=()=>{ transformed=true; wrapEl.style.background='var(--bg-red)'; buf=''; showDigits(''); setStatus('完成'); };
       if(a){ try{ a.onended=after; }catch{ setTimeout(after,380); } } else { setTimeout(after,380); }
-      armedStand=false;
-      return;
+      armedStand=false; return;
     }
 
     // 第一次 ENTER：总是先播 enter
@@ -229,15 +228,12 @@
   }
   function ringStop(){ safePause(ringNode); ringNode=null; setStatus('铃声停止'); }
 
-  // 待定：解除变身（用普通按键音）
+  // 待定：解除变身
   function onUnset(){ playKey('key1'); transformed=false; wrapEl.style.background='var(--bg)'; setStatus('解除变身'); }
 
   // 构建键盘
-  const grid=['1','2','3','4','5','6','7','8','9','*','0','#'];
-  grid.forEach(k=>{
-    const b=document.createElement('button'); b.className='key'; b.textContent=k;
-    b.onclick=()=>push(k);
-    keysEl.appendChild(b);
+  ['1','2','3','4','5','6','7','8','9','*','0','#'].forEach(k=>{
+    const b=document.createElement('button'); b.className='key'; b.textContent=k; b.onclick=()=>push(k); keysEl.appendChild(b);
   });
 
   // 绑定按钮
@@ -246,56 +242,29 @@
   document.getElementById('btnStop').onclick=ringStop;
   document.getElementById('btnUnset').onclick=onUnset;
 
-  // 导出/清空
-  const modal=document.getElementById('modal');
-  document.getElementById('btnBrowser').onclick=()=>{ modal.style.display='flex'; };
-  document.getElementById('btnClose').onclick=()=>{ modal.style.display='none'; };
-  document.getElementById('btnExport').onclick=()=>{ const s=JSON.stringify(cfg); navigator.clipboard&&navigator.clipboard.writeText(s); setStatus('已复制 JSON'); };
-  document.getElementById('btnClear').onclick=()=>{ buf=''; showDigits(''); armedStand=false; setStatus('已清空'); };
-
-  // 管理器（可手动覆盖）
+  // 管理器
   const keyList=[
-    ['openPhone','Open phone'],
-    ['ring','铃声'],
-    ['enter','ENTER'],
-    ['key1','普通按键'],
-    ['key5_2','5(第二次)'],
-    ['key5_3','5(第三次)'],
-    ['standBy','Stand by'],
-    ['complete','Complete'],
-    ['combo103','103'],
-    ['combo106','106'],
-    ['combo3821','3821']
+    ['openPhone','Open phone'],['ring','铃声'],['enter','ENTER'],['key1','普通按键'],
+    ['key5_2','5(第二次)'],['key5_3','5(第三次)'],['standBy','Stand by'],
+    ['complete','Complete'],['combo103','103'],['combo106','106'],['combo3821','3821']
   ];
   const nameMap={
-    'openphone':'openPhone','open phone':'openPhone',
-    'ring':'ring',
-    'enter':'enter',
-    'key1':'key1',
-    'key5_2':'key5_2','key5-2':'key5_2',
-    'key5_3':'key5_3','key5-3':'key5_3',
-    'standby':'standBy','stand by':'standBy',
+    'open phone':'openPhone','openphone':'openPhone','open_phone':'openPhone',
+    'ring':'ring','enter':'enter','key1':'key1',
+    'key5_2':'key5_2','key5-2':'key5_2','5_2':'key5_2',
+    'key5_3':'key5_3','key5-3':'key5_3','5_3':'key5_3',
+    'stand by':'standBy','standby':'standBy','stand_by':'standBy','stay':'standBy',
     'complete':'complete',
-    'combo103':'combo103','103':'combo103',
-    'combo106':'combo106','106':'combo106',
-    'combo3821':'combo3821','3821':'combo3821'
+    '103':'combo103','combo103':'combo103',
+    '106':'combo106','combo106':'combo106',
+    '3821':'combo3821','combo3821':'combo3821'
   };
-  function baseNoExt(n){ const i=n.lastIndexOf('.'); return (i>=0?n.slice(0,i):n).toLowerCase().replace(/\s+/g,' '); }
-  function autoMapList(files){
-    let matched=0;
-    [...files].forEach(f=>{
-      const r=new FileReader();
-      r.onload=()=>{ const key=nameMap[ baseNoExt(f.name) ]; if(key){ cfg[key]=r.result; matched++; saveCfg(); refreshPairs(); } };
-      r.readAsDataURL(f);
-    });
-    setStatus('已选择 '+files.length+' 个文件，自动匹配 '+matched+' 个');
-  }
   const pairsEl=document.getElementById('pairs');
+  function baseNoExt(n){ const i=n.lastIndexOf('.'); return (i>=0?n.slice(0,i):n).toLowerCase().trim(); }
   function refreshPairs(){
     pairsEl.innerHTML='';
     keyList.forEach(([key,label])=>{
-      const d=document.createElement('div');
-      d.className='pair';
+      const d=document.createElement('div'); d.className='pair';
       d.innerHTML = `<div style="font-weight:600">${label} <span class="tag">(${key})</span></div>
         <div class="tag">${cfg[key]?'<span class="ok">✅ 已配置</span>':'<span class="warn">⚠️ 未配置</span>'}</div>
         <div class="row">
@@ -305,32 +274,45 @@
           ${cfg[key]?`<audio controls src="${cfg[key]}" preload="none" style="width:100%;margin-top:6px"></audio>`:''}
         </div>`;
       const input=d.querySelector('input[type=file]');
-      input.onchange=(e)=>{
-        const f=e.target.files && e.target.files[0]; if(!f) return;
-        const r=new FileReader(); r.onload=()=>{ cfg[key]=r.result; saveCfg(); refreshPairs(); }; r.readAsDataURL(f);
-      };
-      d.querySelector('[data-act=preview]').onclick=()=>{
-        const u=cfg[key]; if(!u){ setStatus('未配置：'+key); beep(); return; }
-        try{ const a=new Audio(u); a.play().catch(()=>{});}catch{}
-      };
+      input.onchange=(e)=>{ const f=e.target.files?.[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ cfg[key]=r.result; saveCfg(); refreshPairs(); }; r.readAsDataURL(f); };
+      d.querySelector('[data-act=preview]').onclick=()=>{ const u=cfg[key]; if(!u){ setStatus('未配置：'+key); beep(); return; } try{ new Audio(u).play().catch(()=>{});}catch{} };
       d.querySelector('[data-act=clear]').onclick=()=>{ delete cfg[key]; saveCfg(); refreshPairs(); };
       pairsEl.appendChild(d);
     });
   }
   refreshPairs();
 
-  // 拖拽/批量
-  const drop=document.getElementById('drop');
+  // 批量导入
+  const drop=document.getElementById('drop'), multi=document.getElementById('fileMulti');
+  drop.addEventListener('click',()=>multi.click());
   drop.ondragover=(e)=>{ e.preventDefault(); };
-  drop.ondrop=(e)=>{ e.preventDefault(); if(e.dataTransfer && e.dataTransfer.files){ autoMapList(e.dataTransfer.files); } };
-  document.getElementById('fileMulti').onchange=(e)=>{ const fs=e.target.files; if(fs && fs.length) autoMapList(fs); e.target.value=''; };
-  drop.previousElementSibling.querySelector('label.btn').onclick=function(){ document.getElementById('fileMulti').click(); };
+  drop.ondrop=(e)=>{ e.preventDefault(); if(e.dataTransfer?.files){ autoMapList(e.dataTransfer.files); } };
+  multi.onchange=(e)=>{ const fs=e.target.files; if(fs&&fs.length) autoMapList(fs); e.target.value=''; };
+  function autoMapList(files){
+    let matched=0;
+    [...files].forEach(f=>{
+      const r=new FileReader();
+      r.onload=()=>{ const key=nameMap[ baseNoExt(f.name) ]; if(key){ cfg[key]=r.result; matched++; saveCfg(); refreshPairs(); } };
+      r.readAsDataURL(f);
+    });
+    setStatus('已选择 '+files.length+' 个文件，自动匹配 '+matched+' 个');
+  }
 
-  // 保险：拦截手势缩放（iOS 某些版本）
+  // 保险：若仍出现缩放手势，强制阻止
   ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
     document.addEventListener(ev, e=>{ e.preventDefault(); }, {passive:false});
   });
+
+  // 第一次用户手势：解锁 + 播 open phone
+  ['pointerdown','touchend','click'].forEach(evt=>{
+    document.addEventListener(evt, unlock, { once:true, passive:true });
+  });
 })();
+</script>
+
+<!-- 注册 Service Worker（HTTPS 或 localhost 才生效；GitHub Pages 满足） -->
+<script>
+  'serviceWorker' in navigator && navigator.serviceWorker.register('./sw.js', { scope: './' });
 </script>
 </body>
 </html>
