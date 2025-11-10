@@ -34,3 +34,4 @@ self.addEventListener('fetch', (e) => {
   // 其他资源：缓存优先回退网络
   e.respondWith(caches.match(req).then(hit => hit || fetch(req)));
 });
+
