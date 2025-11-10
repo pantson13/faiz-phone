@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<title>FAIZ Phone – 低延迟（规则加强）</title>
+<title>FAIZ Phone – 低延迟（规则升级版）</title>
 <style>
   :root{--bg:#0b0f19;--bg-red:#7f1d1d;--fg:#fff;--panel:#0f172a;--border:#334155;--muted:#94a3b8}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -13,7 +13,7 @@
     font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
     background:var(--bg); color:var(--fg);
     -webkit-text-size-adjust:100%;
-    touch-action:manipulation; /* 防双击缩放 */
+    touch-action:manipulation;
     -webkit-user-select:none; user-select:none;
   }
   .wrap{max-width:480px;margin:0 auto;padding:16px;min-height:100vh;display:flex;align-items:center;justify-content:center}
@@ -65,14 +65,14 @@
 
 <script>
 (() => {
-  // ===== 元素 =====
+  // ===== UI refs =====
   const digitsEl = document.getElementById('digits');
   const hintEl   = document.getElementById('hint');
   const statusEl = document.getElementById('status');
   const wrapEl   = document.getElementById('wrap');
   const keysEl   = document.getElementById('keys');
 
-  // ===== 声音资源（相对路径，指向 /assets）=====
+  // ===== 声音资源（相对路径 -> 仓库 assets/）=====
   const ASSET = {
     openPhone: 'assets/open phone.m4a',
     ring:      'assets/ring.m4a',
@@ -85,7 +85,8 @@
     error:     'assets/error.m4a',
     ready:     'assets/ready.m4a',
     exceed:    'assets/exceed charge.m4a',
-    release:   'assets/release.m4a'
+    release:   'assets/release.m4a',
+    combo3821: 'assets/3821.m4a'
   };
 
   // ===== 低延迟播放器（Web Audio）=====
@@ -95,7 +96,7 @@
     if (ac) return ac;
     const C = window.AudioContext || window.webkitAudioContext;
     if (!C) return null;
-    ac = new C({ latencyHint: 'interactive' }); // 低延迟倾向
+    ac = new C({ latencyHint: 'interactive' });
     masterGain = ac.createGain();
     masterGain.gain.value = 1.0;
     masterGain.connect(ac.destination);
@@ -130,47 +131,38 @@
     try{ if (ctx.state==='suspended') await ctx.resume(); }catch{}
     unlocked = true;
     hintEl.textContent='已解锁，预加载中…';
-    // 预解码所有音效
     await Promise.all(Object.keys(ASSET).map(k => loadBuffer(k).catch(()=>null)));
     hintEl.textContent='已解锁';
-    // 必播开机音
-    playNow('openPhone');
+    playNow('openPhone'); // 必播开机音
   }
   ['pointerdown','touchend','click'].forEach(evt=>{
     document.addEventListener(evt, ()=>unlockAndPreload(), { once:true, passive:true });
   });
 
-  // ===== 规则状态 =====
-  let buf='';               // 最近输入的数字串（最多保留 3 位）
-  let transformed=false;    // 是否处于变身态
-  let armedStand=false;     // 是否处于“stand by 已触发，等待第二次 ENTER 完成变身”
-  let ringNode=null, standNode=null;
-  let transformedReady=false; // 变身态下，ENTER 第一次触发 ready，第二次触发 exceed
-
-  const SPECIAL_COMBOS = ['555','106','103']; // 三组“按键级别”的特殊组合
-  function isPrefixOfAny(str){
-    return SPECIAL_COMBOS.some(c => c.startsWith(str));
-  }
-  function stageFor(newBuf){
-    // 返回 0/1/2/3：表示是否是特殊组合的前缀/第几位
-    for (const c of SPECIAL_COMBOS){
-      if (c.startsWith(newBuf)){
-        return newBuf.length; // 1,2 或3
-      }
-    }
+  // ===== 状态与规则 =====
+  const SPECIAL_STAGE = ['555','106','103']; // 三组“按键级别”三段音
+  function stageFor(buf){ // 返回 0/1/2/3
+    for (const c of SPECIAL_STAGE){ if (c.startsWith(buf)) return buf.length; }
     return 0;
   }
+
+  let buf='', transformed=false, armedStand=false, transformedReady=false;
+  let ringNode=null, standNode=null;
 
   function showDigits(s){ digitsEl.textContent=(s||'').slice(-3).padStart(3,'—'); }
   function setStatus(t){ statusEl.textContent=t; }
 
+  // 新规则②：任何按键先中断铃声（若在响）
+  function maybeInterruptRing(){
+    if (ringNode){ safeStop(ringNode); ringNode=null; setStatus('铃声停止'); }
+  }
+
   async function pushDigit(k){
     await unlockAndPreload();
+    maybeInterruptRing(); // ← 新规则②：打断铃声
 
-    // 更新缓冲：只保留最近 3 位
     const newBuf = (buf + k).slice(-3);
-    const stg = stageFor(newBuf); // 0/1/2/3
-    // 播放按键音：三组特殊在 1/2/3 位分别对应 key1/key5_2/key5_3；其余组合用 key1
+    const stg = stageFor(newBuf);
     if (stg===1)      playNow('key1');
     else if (stg===2) playNow('key5_2');
     else if (stg===3) playNow('key5_3');
@@ -179,92 +171,85 @@
     buf = newBuf;
     showDigits(buf);
 
-    // 状态提示
     if (buf==='555') setStatus('已输入 555');
     else if (buf==='106') setStatus('已输入 106');
     else if (buf==='103') setStatus('已输入 103');
+    else if (buf==='3821'){ setStatus('已输入 3821'); playNow('combo3821'); }
     else setStatus('输入中');
   }
 
-  // ENTER 行为
   async function onEnter(){
     await unlockAndPreload();
+    maybeInterruptRing(); // ← 新规则②：打断铃声
 
-    // 变身态下：ENTER 规则
+    // 变身态下：ENTER
     if (transformed){
-      if (!transformedReady){
-        // 第一次 ENTER：不播 enter，只播 ready
-        playNow('ready');
-        setStatus('Ready');
-        transformedReady = true;
-      }else{
-        // 第二次 ENTER：不播 enter，只播 exceed charge
-        playNow('exceed');
-        setStatus('Exceed charge');
-        transformedReady = false; // 可根据需要反复循环两段
-      }
+      if (!transformedReady){ playNow('ready'); setStatus('Ready'); transformedReady=true; }
+      else { playNow('exceed'); setStatus('Exceed charge'); transformedReady=false; }
       return;
     }
 
-    // 非变身态：若已武装（555 后第一下 ENTER 已播 stand by），这一下应该“完成变身”
+    // 未变身：若已武装（555 后一次 enter 播了 stand by），这一下完成变身
     if (armedStand){
       safeStop(standNode); standNode=null;
       const src = playNow('complete');
-      const finish=()=>{ transformed=true; transformedReady=false; armedStand=false; wrapEl.style.background='var(--bg-red)'; buf=''; showDigits(buf); setStatus('完成'); };
+      const finish=()=>{ transformed=true; transformedReady=false; armedStand=false; wrapEl.style.background='var(--bg-red)'; buf=''; showDigits(''); setStatus('完成'); };
       if (src) src.onended=finish; else setTimeout(finish, 380);
       return;
     }
 
-    // 非变身态：先播 enter
+    // 非武装：先播 enter
     playNow('enter');
 
-    // 只有 555 进入 stand by；其它任意组合 → error
     if (buf==='555'){
+      // 进入 stand by 等待完成
       safeStop(standNode); standNode=null;
-      standNode = playNow('standBy'); // 不循环
+      standNode = playNow('standBy');
       if (standNode) standNode.onended = ()=>{ standNode=null; };
-      armedStand = true;
-      setStatus('stand by');
-    }else if (buf.length>0){
-      // 任意数字组合（非 555）：enter 之后 → error
-      playNow('error');
-      setStatus('Error');
-    }else{
-      setStatus('ENTER');
+      armedStand = true; setStatus('stand by');
+      return;
     }
+
+    // —— 新规则①：未变身且“完成一项组合”后按 ENTER：
+    //    若该组合 ∉ {555,106,103,3821} ——> enter 后触发 error，并 **重置**（避免再按 ENTER 重复 error）
+    if (buf.length===3){ // 完整三位组合
+      if (buf!=='106' && buf!=='103' && buf!=='3821'){
+        playNow('error');
+        // 重置：
+        buf=''; showDigits(buf);
+        armedStand=false; transformedReady=false;
+        setStatus('Error → 已重置');
+        return;
+      }
+    }
+
+    // 对于 106 / 103 / 3821：按 ENTER 不报错（按你新要求排除），仅保留 enter 提示
+    setStatus('ENTER');
   }
 
-  // 铃声
   async function ringStart(){
     await unlockAndPreload();
+    // 若已在响，重启一次
     safeStop(ringNode); ringNode=null;
-    // 提示：WebAudio 无直接 loop 属性，这里采用 <bufferSource>.loop=true 的方式 —— 为避免开销，这里不循环铃声
-    ringNode = playNow('ring'); // 需要循环请换成创建新 source 并设置 loop=true
+    ringNode = playNow('ring'); // 一次性；需要循环可改为创建 loop=true
     setStatus('响铃中');
   }
   function ringStop(){ safeStop(ringNode); ringNode=null; setStatus('铃声停止'); }
 
-  // クリア：仅在“变身态”时：key1 -> release -> 解除变身
   async function onClear(){
     await unlockAndPreload();
-    if (!transformed){
-      // 非变身态，按设计仍只播 key1（与“其他组合都是 key 音效”的精神一致）
-      playNow('key1');
-      setStatus('未变身');
-      return;
-    }
+    maybeInterruptRing(); // ← 新规则②：打断铃声
+    if (!transformed){ playNow('key1'); setStatus('未变身'); return; }
     playNow('key1');
     const src = playNow('release');
-    const finish=()=>{ transformed=false; armedStand=false; transformedReady=false; wrapEl.style.background='var(--bg)'; setStatus('解除变身'); };
+    const finish=()=>{ transformed=false; armedStand=false; transformedReady=false; wrapEl.style.background='var(--bg)'; setStatus('解除变身'); buf=''; showDigits(buf); };
     if (src) src.onended=finish; else finish();
   }
 
-  // 构建键盘
+  // 键盘
   ['1','2','3','4','5','6','7','8','9','*','0','#'].forEach(k=>{
     const b=document.createElement('button'); b.className='key'; b.textContent=k; b.onclick=()=>{ pushDigit(k); }; keysEl.appendChild(b);
   });
-
-  // 绑定按钮
   document.getElementById('btnEnter').onclick=onEnter;
   document.getElementById('btnRing').onclick=ringStart;
   document.getElementById('btnStop').onclick=ringStop;
