@@ -3,252 +3,255 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>FAIZ Phone</title>
 <style>
-  :root{ --bg:#0b0f19; }
-  html,body{
-    margin:0; background:var(--bg); color:#fff; -webkit-text-size-adjust:100%;
-    -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
-  }
-  *{ -webkit-tap-highlight-color: transparent; }
+  :root{
+    /* 皮肤图片路径：把你的那张图存为 assets/ui.jpg 或改这里 */
+    --ui: url('assets/ui.jpg');
 
-  .page{
-    min-height:100vh; display:flex; flex-direction:column; align-items:center;
-    gap:24px; padding:24px 0 80px;
+    /* 下面四个百分比用于微调“按键覆盖层”的位置与大小（不用代码也能调） */
+    --frame-top: 47.5%;   /* 覆盖层顶部（越大越往下） */
+    --frame-bottom: 6.5%; /* 覆盖层底部（越大越往上） */
+    --frame-left: 16%;    /* 覆盖层左边距（越大越往右） */
+    --frame-right: 16%;   /* 覆盖层右边距（越大越往左） */
+
+    --bg:#0b0f19; --bg-red:#7f1d1d; --fg:#fff;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+    -webkit-text-size-adjust:100%;
+    touch-action:manipulation; user-select:none; -webkit-user-select:none;
+    display:flex; align-items:center; justify-content:center;
   }
 
-  /* 容器高度由图片真实比例动态设置 */
-  .phone-wrap{
+  /* 手机皮肤容器（保持原图纵横比） */
+  .phone{
+    width:min(94vw,520px);
+    aspect-ratio: 708 / 1536;          /* 这张图是 708x1536，你的图比不比这一样都行 */
+    background: var(--ui) center/contain no-repeat;
     position:relative;
-    width:min(92vw, 520px);
-    background:#000;
-    border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.45);
-    overflow:hidden; touch-action:manipulation;
-  }
-  .phone-bg{
-    position:absolute; inset:0; width:100%; height:100%;
-    object-fit:cover; object-position:center; display:block;
-  }
-  .img-missing{
-    position:absolute; left:0; right:0; top:0;
-    background:#7f1d1d; color:#fff; font-size:12px;
-    padding:6px 10px; text-align:center; display:none; z-index:5;
   }
 
-  /* 热区：透明、无边框、无描边 */
-  .hot{
-    position:absolute; display:block; border-radius:10px;
-    background:transparent; border:none; outline:none; margin:0; padding:0;
-    -webkit-appearance:none; appearance:none;
+  /* 覆盖在图上的“按键区域” */
+  .frame{
+    position:absolute;
+    left:var(--frame-left);
+    right:var(--frame-right);
+    top:var(--frame-top);
+    bottom:var(--frame-bottom);
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    grid-auto-rows:1fr;
+    gap:0.9vh; /* 行列间距，根据需要可稍调 */
   }
-  .hot:focus, .hot:active{ outline:none; box-shadow:none; border:none; }
 
-  /* —— 已重新对齐的键位（百分比） —— */
-  /* 功能键区：整体轻微上移 + 宽高细调 */
-  #btnEnter{ left:26.8%; width:46.4%;  top:56.0%; height:4.4%; }   /* ENTER */
-  #btnRing { left:21.0%; width:17.2%;  top:63.1%; height:5.1%; }   /* 铃声 */
-  #btnClear{ left:41.8%; width:17.2%;  top:63.1%; height:5.1%; }   /* クリア */
-  #btnStop { left:62.6%; width:17.2%;  top:63.1%; height:5.1%; }   /* 停止 */
+  /* 所有可点按钮：透明，不破坏原图；按下稍微缩放一下 */
+  .hit{
+    background:transparent;
+    border:none;
+    outline:none;
+    touch-action:manipulation;
+    -webkit-user-select:none; user-select:none;
+  }
+  .hit:active{ transform:scale(.98); }
 
-  /* 数字键区：每行等距，行距微调以匹配图片 */
-  #k1{ left:26.3%; width:14.2%; top:69.1%; height:5.1%;}
-  #k2{ left:43.9%; width:14.2%; top:69.1%; height:5.1%;}
-  #k3{ left:61.7%; width:14.2%; top:69.1%; height:5.1%;}
+  /* 第一行：ENTER（独占三列） */
+  .enter{ grid-column:1 / 4; }
 
-  #k4{ left:26.3%; width:14.2%; top:75.5%; height:5.1%;}
-  #k5{ left:43.9%; width:14.2%; top:75.5%; height:5.1%;}
-  #k6{ left:61.7%; width:14.2%; top:75.5%; height:5.1%;}
+  /* 第二行：铃声 / クリア / 停止 */
+  .ring{ }
+  .clear{ }
+  .stop{ }
 
-  #k7{ left:26.3%; width:14.2%; top:81.9%; height:5.1%;}
-  #k8{ left:43.9%; width:14.2%; top:81.9%; height:5.1%;}
-  #k9{ left:61.7%; width:14.2%; top:81.9%; height:5.1%;}
-
-  #kStar{ left:26.3%; width:14.2%; top:88.2%; height:5.1%;}
-  #k0{    left:43.9%; width:14.2%; top:88.2%; height:5.1%;}
-  #kHash{ left:61.7%; width:14.2%; top:88.2%; height:5.1%;}
+  /* 数字键盘四行（1-9、*0#）——按顺序塞即可 */
 </style>
 </head>
 <body>
-<div class="page">
+  <div class="phone" id="phone">
+    <div class="frame" id="frame">
+      <!-- 第1行：ENTER 独占 -->
+      <button class="hit enter" aria-label="ENTER" id="btnEnter"></button>
 
-  <div class="phone-wrap" id="wrap">
-    <div class="img-missing" id="imgMissing">
-      背景图未加载。请确认 <code>assets/ui.jpg</code> 存在（区分大小写）。
+      <!-- 第2行：铃声 / クリア / 停止 -->
+      <button class="hit ring"  aria-label="铃声" id="btnRing"></button>
+      <button class="hit clear" aria-label="クリア" id="btnClear"></button>
+      <button class="hit stop"  aria-label="停止" id="btnStop"></button>
+
+      <!-- 第3-6行：数字键（1~9、*0#） -->
+      <button class="hit key" aria-label="1" data-k="1"></button>
+      <button class="hit key" aria-label="2" data-k="2"></button>
+      <button class="hit key" aria-label="3" data-k="3"></button>
+
+      <button class="hit key" aria-label="4" data-k="4"></button>
+      <button class="hit key" aria-label="5" data-k="5"></button>
+      <button class="hit key" aria-label="6" data-k="6"></button>
+
+      <button class="hit key" aria-label="7" data-k="7"></button>
+      <button class="hit key" aria-label="8" data-k="8"></button>
+      <button class="hit key" aria-label="9" data-k="9"></button>
+
+      <button class="hit key" aria-label="*" data-k="*"></button>
+      <button class="hit key" aria-label="0" data-k="0"></button>
+      <button class="hit key" aria-label="#" data-k="#"></button>
     </div>
-    <img id="bg" class="phone-bg" alt="UI" />
-
-    <!-- 功能键 -->
-    <button id="btnEnter" class="hot" aria-label="ENTER"></button>
-    <button id="btnRing"  class="hot" aria-label="铃声"></button>
-    <button id="btnClear" class="hot" aria-label="クリア"></button>
-    <button id="btnStop"  class="hot" aria-label="停止铃声"></button>
-
-    <!-- 数字键盘 -->
-    <button id="k1" class="hot" data-k="1"></button>
-    <button id="k2" class="hot" data-k="2"></button>
-    <button id="k3" class="hot" data-k="3"></button>
-    <button id="k4" class="hot" data-k="4"></button>
-    <button id="k5" class="hot" data-k="5"></button>
-    <button id="k6" class="hot" data-k="6"></button>
-    <button id="k7" class="hot" data-k="7"></button>
-    <button id="k8" class="hot" data-k="8"></button>
-    <button id="k9" class="hot" data-k="9"></button>
-    <button id="kStar" class="hot" data-k="*"></button>
-    <button id="k0" class="hot" data-k="0"></button>
-    <button id="kHash" class="hot" data-k="#"></button>
   </div>
-
-</div>
 
 <script>
 (() => {
-  /* ===== 背景图（固定 assets/ui.jpg）按真实比例设置容器高度 ===== */
-  const UI_FILE = 'assets/ui.jpg';
-  const wrap = document.getElementById('wrap');
-  const bgImg = document.getElementById('bg');
-  const imgMissing = document.getElementById('imgMissing');
-  function fitWrapToImage(){
-    const W = wrap.clientWidth;
-    const r = bgImg.naturalHeight / bgImg.naturalWidth;
-    if (isFinite(r) && r > 0){ wrap.style.height = (W * r) + 'px'; }
-  }
-  bgImg.onload = () => { imgMissing.style.display = 'none'; fitWrapToImage(); };
-  bgImg.onerror = () => { imgMissing.style.display = 'block'; };
-  bgImg.src = UI_FILE;
-  window.addEventListener('resize', ()=>{ if(bgImg.complete && bgImg.naturalWidth) fitWrapToImage(); });
-
-  /* ===== 声音名 → 基名（不带后缀） ===== */
-  const SND = {
-    openPhone:'open phone', ringStart:'ring', enter:'enter',
-    key:'key1', key5_2:'key5_2', key5_3:'key5_3',
-    standBy:'stand by', complete:'complete', release:'release',
-    error:'error', ready:'ready', exceed:'exceed charge',
-    weaponHit:'weaponHit'
+  /*********** 资源路径（和你仓库 assets 里的文件名一致） ***********/
+  const ASSET = {
+    openPhone: 'assets/open phone.m4a',
+    ring:      'assets/ring.m4a',
+    enter:     'assets/enter.m4a',
+    key1:      'assets/key1.m4a',
+    key5_2:    'assets/key5_2.m4a',
+    key5_3:    'assets/key5_3.m4a',
+    standBy:   'assets/stand by.m4a',
+    complete:  'assets/complete.m4a',
+    error:     'assets/error.m4a',
+    ready:     'assets/ready.m4a',
+    exceed:    'assets/exceed charge.m4a',
+    release:   'assets/release.m4a',
+    combo3821: 'assets/3821.m4a'
   };
 
-  /* ===== 低延迟：优先 WebAudio（缓存解码），失败退回 <audio> ===== */
-  let started=false, ringing=null, AC=null;
-  const mimeByExt = { m4a:'audio/mp4', mp3:'audio/mpeg', wav:'audio/wav', mp4:'audio/mp4' };
-  const extOrder = ['m4a','mp3','wav','mp4'];
-  function candidates(base){
-    const t = document.createElement('audio'); const out=[];
-    for(const ext of extOrder){ const mime=mimeByExt[ext]||''; if(!mime || t.canPlayType(mime)!=='') out.push(`assets/${base}.${ext}`); }
-    return out;
+  /*********** 低延迟播放（Web Audio） ***********/
+  let ac=null, masterGain=null;
+  const buffers = new Map();
+  function ensureAC(){
+    if (ac) return ac;
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!C) return null;
+    ac = new C({latencyHint:'interactive'});
+    masterGain = ac.createGain(); masterGain.gain.value = 1.0;
+    masterGain.connect(ac.destination);
+    return ac;
   }
-  const waBuf=new Map(), waFail=new Set();
-  async function waLoadOnce(name){
-    if(waBuf.has(name) || waFail.has(name)) return;
-    const base=SND[name]; if(!base){ waFail.add(name); return; }
-    const urls = candidates(base);
-    try{
-      AC = AC || new (window.AudioContext||window.webkitAudioContext)();
-    }catch{}
-    for(const url of urls){
-      try{
-        const res=await fetch(url,{cache:'force-cache'}); if(!res.ok) continue;
-        const arr=await res.arrayBuffer(); const buf=await AC.decodeAudioData(arr);
-        waBuf.set(name, buf); return;
-      }catch{}
-    }
-    waFail.add(name);
+  async function loadBuffer(key){
+    if (buffers.has(key)) return buffers.get(key);
+    const url = ASSET[key]; if(!url) return null;
+    const res = await fetch(url, {cache:'no-store'}); if(!res.ok) return null;
+    const arr = await res.arrayBuffer();
+    const ctx = ensureAC(); const buf = await ctx.decodeAudioData(arr);
+    buffers.set(key, buf); return buf;
   }
-  function waPlay(name, {loop=false, delayMs=0}={}){
-    if(!AC) return null;
-    const buf=waBuf.get(name); if(!buf) return null;
-    const src=AC.createBufferSource(), g=AC.createGain();
-    src.buffer=buf; src.loop=!!loop; src.connect(g).connect(AC.destination);
-    const start=()=>src.start(); if(delayMs>0) setTimeout(start, delayMs); else start();
-    return { stop:()=>{ try{src.stop();}catch{} } };
+  function playNow(key,{loop=false}={}){
+    const ctx = ensureAC(); if(!ctx) return null;
+    const buf = buffers.get(key); if(!buf) return null;
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.loop = !!loop; src.connect(masterGain); src.start(0);
+    return src;
   }
-  function htmlPlay(name, {loop=false, delayMs=0}={}){
-    const base=SND[name]; if(!base) return null;
-    const urls=candidates(base); if(!urls.length) return null;
-    const a=new Audio(); a.preload='auto'; a.playsInline=true; a.loop=!!loop;
-    const go=i=>{ if(i>=urls.length) return;
-      a.onerror=()=>go(i+1); a.src=urls[i];
-      const start=()=>a.play().catch(()=>{}); if(delayMs>0) setTimeout(start, delayMs); else start();
-    }; go(0);
-    return { stop:()=>{ try{a.pause();}catch{} } };
-  }
-  function beep(freq=520, ms=90, type='square', vol=0.22){
-    try{
-      const C=window.AudioContext||window.webkitAudioContext; if(!C) return;
-      AC = AC || new C();
-      const o=AC.createOscillator(), g=AC.createGain();
-      o.type=type; o.frequency.value=freq; g.gain.value=vol;
-      o.connect(g).connect(AC.destination); o.start(); setTimeout(()=>{ try{o.stop();}catch{} }, ms);
-    }catch{}
-  }
-  function play(name, opts={}){
-    if(AC && waBuf.has(name)){ const h=waPlay(name, opts); if(h) return h; }
-    const h2=htmlPlay(name, opts); if(h2) return h2;
-    beep(); return null;
-  }
-  function stopRinging(){ if(ringing){ try{ringing.stop?.();}catch{} ringing=null; } }
-  function anyKeyInterruptRing(){ stopRinging(); }
+  function safeStop(n){ if(n && n.stop){ try{ n.stop(0); }catch{} } }
 
-  async function unlock(){
-    if(started) return; started=true;
-    const C=window.AudioContext||window.webkitAudioContext;
-    if(C){ try{
-      AC=new C();
-      const preload=['openPhone','enter','key','key5_2','key5_3','standBy','complete','release','error','ready','exceed','weaponHit','ringStart'];
-      await Promise.all(preload.map(n=>waLoadOnce(n)));
-    }catch{} }
-    play('openPhone');
+  /*********** 手势解锁 + 预加载 + 开机音 ***********/
+  let unlocked=false;
+  async function unlockAndPreload(){
+    if (unlocked) return;
+    const ctx = ensureAC();
+    try{ if (ctx.state==='suspended') await ctx.resume(); }catch{}
+    unlocked = true;
+    await Promise.all(Object.keys(ASSET).map(k=>loadBuffer(k).catch(()=>null)));
+    playNow('openPhone'); // 开机音
   }
-
-  /* ===== 规则（与你当前一致） ===== */
-  let buf='', transformed=false, armedStandby=false, armedReady=false;
-  function pushKey(k){
-    unlock(); anyKeyInterruptRing();
-    if(k==='*'){ play('weaponHit'); buf=(buf+k).slice(-4); return; }
-    if(k==='5'){
-      const fiveCount=(buf.match(/5+$/)?.[0]?.length||0)+1;
-      if(fiveCount===1) play('key'); else if(fiveCount===2) play('key5_2'); else play('key5_3');
-    }else{ play('key'); }
-    buf=(buf+k).slice(-4);
-  }
-  function onEnter(){
-    unlock(); anyKeyInterruptRing();
-    const last3=buf.slice(-3);
-    if(transformed && (last3==='106'||last3==='103')){ play('enter'); return; }
-    if(armedStandby){ armedStandby=false; play('complete'); transformed=true; armedReady=false; return; }
-    if(transformed){
-      if(!armedReady){ play('ready'); armedReady=true; return; }
-      play('enter'); play('exceed',{delayMs:120}); armedReady=false; return;
-    }
-    if(last3==='555'){ play('enter'); play('standBy'); armedStandby=true; return; }
-    if(last3==='106'||last3==='103'){ play('enter'); return; }
-    if(buf.length===3 && last3!=='3821'){
-      play('enter'); play('error',{delayMs:40});
-      buf=''; armedStandby=false; armedReady=false; return;
-    }
-    play('enter');
-  }
-  function onRingStart(){ unlock(); stopRinging(); ringing=play('ringStart',{loop:true}); }
-  function onRingStop(){ unlock(); play('key'); stopRinging(); }
-  function onClear(){
-    unlock(); anyKeyInterruptRing();
-    play('key'); play('release',{delayMs:40});
-    transformed=false; armedStandby=false; armedReady=false; buf='';
-  }
-
-  // 绑定（pointerdown 避免点击延迟）
-  const bind=(el,fn)=>{ el.addEventListener('pointerdown',e=>{ e.preventDefault(); fn(); }, {passive:false}); };
-  bind(document.getElementById('btnEnter'), onEnter);
-  bind(document.getElementById('btnRing'),  onRingStart);
-  bind(document.getElementById('btnStop'),  onRingStop);
-  bind(document.getElementById('btnClear'), onClear);
-  ['k1','k2','k3','k4','k5','k6','k7','k8','k9','kStar','k0','kHash'].forEach(id=>{
-    const el = document.getElementById(id);
-    bind(el, ()=>pushKey(el.dataset.k));
+  ['pointerdown','touchend','click'].forEach(ev=>{
+    document.addEventListener(ev, ()=>unlockAndPreload(), {once:true, passive:true});
   });
 
-  // 首次手势 → 解锁音频并预热
-  ['pointerdown','touchstart','click','keydown'].forEach(ev=>{
-    window.addEventListener(ev, ()=>{ unlock(); }, {once:true, passive:true});
+  /*********** 规则状态 ***********/
+  const SPECIAL_STAGE = ['555','106','103']; // 三段按键音的组合
+  let buf='', transformed=false, armedStand=false, transformedReady=false;
+  let ringNode=null, standNode=null;
+
+  function stageFor(b){ for(const c of SPECIAL_STAGE){ if(c.startsWith(b)) return b.length; } return 0; }
+
+  function maybeInterruptRing(){ if (ringNode){ safeStop(ringNode); ringNode=null; } }
+
+  async function pushDigit(k){
+    await unlockAndPreload();
+    maybeInterruptRing();
+
+    const newBuf = (buf + k).slice(-3);
+    const stg = stageFor(newBuf);
+    if      (stg===1) playNow('key1');
+    else if (stg===2) playNow('key5_2');
+    else if (stg===3) playNow('key5_3');
+    else              playNow('key1');
+
+    buf = newBuf;
+
+    if (buf==='3821') playNow('combo3821'); // 3821仍有独立音效
+  }
+
+  async function onEnter(){
+    await unlockAndPreload();
+    maybeInterruptRing();
+
+    // 变身态：第一次 ENTER -> ready；第二次 -> exceed（均不播 enter）
+    if (transformed){
+      if (!transformedReady){ playNow('ready'); transformedReady=true; }
+      else { playNow('exceed'); transformedReady=false; }
+      return;
+    }
+
+    // 未变身 + 已武装（555后已播 stand by）：此下完成
+    if (armedStand){
+      safeStop(standNode); standNode=null;
+      const src = playNow('complete');
+      const finish = ()=>{ transformed=true; transformedReady=false; armedStand=false; document.body.style.background='var(--bg-red)'; buf=''; };
+      if (src) src.onended=finish; else setTimeout(finish,380);
+      return;
+    }
+
+    // 普通情况：先播 enter
+    playNow('enter');
+
+    // 555 触发 stand by，等待下一次 ENTER 完成
+    if (buf==='555'){
+      safeStop(standNode); standNode=null;
+      standNode = playNow('standBy');
+      if (standNode) standNode.onended = ()=>{ standNode=null; };
+      armedStand = true; return;
+    }
+
+    // 未变身 & 完整三位组合 & 组合 ∉ {555,106,103,3821}：enter 后 error，并自动重置
+    if (buf.length===3 && buf!=='106' && buf!=='103' && buf!=='3821'){
+      playNow('error');
+      buf=''; armedStand=false; transformedReady=false;
+      return;
+    }
+    // 106/103/3821：按下 ENTER 只播 enter（已完成）
+  }
+
+  async function ringStart(){ await unlockAndPreload(); safeStop(ringNode); ringNode = playNow('ring'); }
+  function ringStop(){ safeStop(ringNode); ringNode=null; }
+
+  async function onClear(){
+    await unlockAndPreload();
+    maybeInterruptRing();
+    if (!transformed){ playNow('key1'); return; }
+    playNow('key1');
+    const src = playNow('release');
+    const finish=()=>{ transformed=false; armedStand=false; transformedReady=false; document.body.style.background='var(--bg)'; buf=''; };
+    if (src) src.onended=finish; else finish();
+  }
+
+  /*********** 绑定点击 ***********/
+  document.querySelectorAll('.key').forEach(b=>{
+    b.addEventListener('click', ()=>pushDigit(b.dataset.k));
+  });
+  document.getElementById('btnEnter').addEventListener('click', onEnter);
+  document.getElementById('btnRing').addEventListener('click', ringStart);
+  document.getElementById('btnStop').addEventListener('click', ringStop);
+  document.getElementById('btnClear').addEventListener('click', onClear);
+
+  // 禁止 iOS 捏合缩放
+  ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
+    document.addEventListener(ev, e=>{ e.preventDefault(); }, {passive:false});
   });
 })();
 </script>
