@@ -7,15 +7,12 @@
 <title>FAIZ Phone</title>
 <style>
   :root{
-    /* 皮肤图片路径：把你的那张图存为 assets/ui.jpg 或改这里 */
     --ui: url('assets/ui.jpg');
-
-    /* 下面四个百分比用于微调“按键覆盖层”的位置与大小（不用代码也能调） */
-    --frame-top: 47.5%;   /* 覆盖层顶部（越大越往下） */
-    --frame-bottom: 6.5%; /* 覆盖层底部（越大越往上） */
-    --frame-left: 16%;    /* 覆盖层左边距（越大越往右） */
-    --frame-right: 16%;   /* 覆盖层右边距（越大越往左） */
-
+    /* 这四个变量可在不改代码的情况下微调覆盖层 */
+    --frame-top: 47.5%;
+    --frame-bottom: 6.5%;
+    --frame-left: 16%;
+    --frame-right: 16%;
     --bg:#0b0f19; --bg-red:#7f1d1d; --fg:#fff;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -27,16 +24,12 @@
     touch-action:manipulation; user-select:none; -webkit-user-select:none;
     display:flex; align-items:center; justify-content:center;
   }
-
-  /* 手机皮肤容器（保持原图纵横比） */
   .phone{
     width:min(94vw,520px);
-    aspect-ratio: 708 / 1536;          /* 这张图是 708x1536，你的图比不比这一样都行 */
+    aspect-ratio: 708 / 1536;
     background: var(--ui) center/contain no-repeat;
     position:relative;
   }
-
-  /* 覆盖在图上的“按键区域” */
   .frame{
     position:absolute;
     left:var(--frame-left);
@@ -46,54 +39,35 @@
     display:grid;
     grid-template-columns:repeat(3,1fr);
     grid-auto-rows:1fr;
-    gap:0.9vh; /* 行列间距，根据需要可稍调 */
+    gap:0.9vh;
   }
-
-  /* 所有可点按钮：透明，不破坏原图；按下稍微缩放一下 */
   .hit{
-    background:transparent;
-    border:none;
-    outline:none;
-    touch-action:manipulation;
-    -webkit-user-select:none; user-select:none;
+    background:transparent; border:none; outline:none;
+    touch-action:manipulation; -webkit-user-select:none; user-select:none;
   }
   .hit:active{ transform:scale(.98); }
-
-  /* 第一行：ENTER（独占三列） */
   .enter{ grid-column:1 / 4; }
-
-  /* 第二行：铃声 / クリア / 停止 */
-  .ring{ }
-  .clear{ }
-  .stop{ }
-
-  /* 数字键盘四行（1-9、*0#）——按顺序塞即可 */
 </style>
 </head>
 <body>
   <div class="phone" id="phone">
     <div class="frame" id="frame">
-      <!-- 第1行：ENTER 独占 -->
+      <!-- 第1行：ENTER -->
       <button class="hit enter" aria-label="ENTER" id="btnEnter"></button>
-
       <!-- 第2行：铃声 / クリア / 停止 -->
       <button class="hit ring"  aria-label="铃声" id="btnRing"></button>
       <button class="hit clear" aria-label="クリア" id="btnClear"></button>
       <button class="hit stop"  aria-label="停止" id="btnStop"></button>
-
-      <!-- 第3-6行：数字键（1~9、*0#） -->
+      <!-- 第3-6行：1~9、*0# -->
       <button class="hit key" aria-label="1" data-k="1"></button>
       <button class="hit key" aria-label="2" data-k="2"></button>
       <button class="hit key" aria-label="3" data-k="3"></button>
-
       <button class="hit key" aria-label="4" data-k="4"></button>
       <button class="hit key" aria-label="5" data-k="5"></button>
       <button class="hit key" aria-label="6" data-k="6"></button>
-
       <button class="hit key" aria-label="7" data-k="7"></button>
       <button class="hit key" aria-label="8" data-k="8"></button>
       <button class="hit key" aria-label="9" data-k="9"></button>
-
       <button class="hit key" aria-label="*" data-k="*"></button>
       <button class="hit key" aria-label="0" data-k="0"></button>
       <button class="hit key" aria-label="#" data-k="#"></button>
@@ -102,7 +76,7 @@
 
 <script>
 (() => {
-  /*********** 资源路径（和你仓库 assets 里的文件名一致） ***********/
+  /*********** 资源路径 ***********/
   const ASSET = {
     openPhone: 'assets/open phone.m4a',
     ring:      'assets/ring.m4a',
@@ -116,7 +90,8 @@
     ready:     'assets/ready.m4a',
     exceed:    'assets/exceed charge.m4a',
     release:   'assets/release.m4a',
-    combo3821: 'assets/3821.m4a'
+    combo3821: 'assets/3821.m4a',
+    weaponHit: 'assets/weaponHit.m4a'   // ★ 确保你有这个文件
   };
 
   /*********** 低延迟播放（Web Audio） ***********/
@@ -163,18 +138,27 @@
   });
 
   /*********** 规则状态 ***********/
-  const SPECIAL_STAGE = ['555','106','103']; // 三段按键音的组合
+  const SPECIAL_STAGE = ['555','106','103']; // 三段按键音
   let buf='', transformed=false, armedStand=false, transformedReady=false;
   let ringNode=null, standNode=null;
 
   function stageFor(b){ for(const c of SPECIAL_STAGE){ if(c.startsWith(b)) return b.length; } return 0; }
-
   function maybeInterruptRing(){ if (ringNode){ safeStop(ringNode); ringNode=null; } }
 
+  /*********** 数字/符号键 ***********/
   async function pushDigit(k){
     await unlockAndPreload();
     maybeInterruptRing();
 
+    // ★ 变身前：* 用 key 音效；变身后：* 用 weaponHit 音效
+    if (k === '*') {
+      if (transformed) playNow('weaponHit');
+      else playNow('key1');
+      buf = (buf + k).slice(-3);
+      return;
+    }
+
+    // 其它键：根据 555/106/103 的阶段决定 key/key5_2/key5_3
     const newBuf = (buf + k).slice(-3);
     const stg = stageFor(newBuf);
     if      (stg===1) playNow('key1');
@@ -184,21 +168,22 @@
 
     buf = newBuf;
 
-    if (buf==='3821') playNow('combo3821'); // 3821仍有独立音效
+    if (buf==='3821') playNow('combo3821'); // 3821 独立音效（如不需要可删）
   }
 
+  /*********** ENTER ***********/
   async function onEnter(){
     await unlockAndPreload();
     maybeInterruptRing();
 
-    // 变身态：第一次 ENTER -> ready；第二次 -> exceed（均不播 enter）
+    // 变身态：第一次 ENTER -> ready；第二次 -> enter + exceed（无例外）
     if (transformed){
       if (!transformedReady){ playNow('ready'); transformedReady=true; }
-      else { playNow('exceed'); transformedReady=false; }
+      else { playNow('enter'); playNow('exceed'); transformedReady=false; }
       return;
     }
 
-    // 未变身 + 已武装（555后已播 stand by）：此下完成
+    // 未变身 + 已武装（stand by 已播）→ 完成
     if (armedStand){
       safeStop(standNode); standNode=null;
       const src = playNow('complete');
@@ -210,7 +195,7 @@
     // 普通情况：先播 enter
     playNow('enter');
 
-    // 555 触发 stand by，等待下一次 ENTER 完成
+    // 555 → stand by，等待下一次 ENTER 完成
     if (buf==='555'){
       safeStop(standNode); standNode=null;
       standNode = playNow('standBy');
@@ -218,18 +203,18 @@
       armedStand = true; return;
     }
 
-    // 未变身 & 完整三位组合 & 组合 ∉ {555,106,103,3821}：enter 后 error，并自动重置
+    // 未变身 & 完整三位组合 & 不在 {555,106,103,3821} → error 并重置
     if (buf.length===3 && buf!=='106' && buf!=='103' && buf!=='3821'){
       playNow('error');
       buf=''; armedStand=false; transformedReady=false;
       return;
     }
-    // 106/103/3821：按下 ENTER 只播 enter（已完成）
+    // 106/103/3821：只播 enter（规则已满足）
   }
 
-  async function ringStart(){ await unlockAndPreload(); safeStop(ringNode); ringNode = playNow('ring'); }
+  /*********** 其它功能键 ***********/
+  async function ringStart(){ await unlockAndPreload(); safeStop(ringNode); ringNode = playNow('ring', {loop:true}); }
   function ringStop(){ safeStop(ringNode); ringNode=null; }
-
   async function onClear(){
     await unlockAndPreload();
     maybeInterruptRing();
@@ -240,7 +225,7 @@
     if (src) src.onended=finish; else finish();
   }
 
-  /*********** 绑定点击 ***********/
+  /*********** 绑定 ***********/
   document.querySelectorAll('.key').forEach(b=>{
     b.addEventListener('click', ()=>pushDigit(b.dataset.k));
   });
