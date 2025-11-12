@@ -7,28 +7,46 @@
 <title>FAIZ Phone</title>
 <style>
   :root{ --bg:#0b0f19; }
-  html,body{margin:0;background:var(--bg);color:#fff;-webkit-text-size-adjust:100%;
-    -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  html,body{
+    margin:0; background:var(--bg); color:#fff; -webkit-text-size-adjust:100%;
+    -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
+  }
   *{ -webkit-tap-highlight-color: transparent; }
-  .page{ min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:24px; padding:24px 0 80px; }
 
-  /* 手机图容器：相对定位，按钮用百分比定位，随图缩放 */
+  .page{
+    min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    gap:24px; padding:24px 0 80px;
+  }
+
+  /* 容器不再固定比例，改为由 JS 根据图片真实比例动态设置高度，避免热区错位 */
   .phone-wrap{
     position:relative;
     width:min(92vw, 520px);
-    aspect-ratio: 708 / 1536;
     background:#000;
     border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.45);
     overflow:hidden; touch-action:manipulation;
   }
-  .phone-bg{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center; display:block; }
-  .img-missing{ position:absolute; left:0; right:0; top:0; background:#7f1d1d; color:#fff; font-size:12px;
-    padding:6px 10px; text-align:center; display:none; z-index:5; }
 
-  .hot{ position:absolute; display:block; border-radius:10px; background:rgba(255,255,255,0); }
-  .hot:active{ outline:2px solid rgba(255,255,255,.25); }
+  .phone-bg{
+    position:absolute; inset:0; width:100%; height:100%;
+    object-fit:cover; object-position:center; display:block;
+  }
 
-  /* —— 键区坐标（百分比），需要的话你再微调 —— */
+  .img-missing{
+    position:absolute; left:0; right:0; top:0;
+    background:#7f1d1d; color:#fff; font-size:12px;
+    padding:6px 10px; text-align:center; display:none; z-index:5;
+  }
+
+  /* 交互热区：完全透明、无边框、无 outline */
+  .hot{
+    position:absolute; display:block; border-radius:10px;
+    background:transparent; border:none; outline:none;
+    -webkit-appearance:none; appearance:none;
+  }
+  .hot:focus, .hot:active{ outline:none; box-shadow:none; border:none; }
+
+  /* —— 键区坐标（百分比），根据你的图来。如果还差一点，只需改这些数值 —— */
   #btnEnter{ left:26.9%; width:46%;  top:56.6%; height:4.2%; }     /* ENTER */
   #btnRing { left:21.0%; width:17%;  top:63.7%; height:5.0%; }     /* 铃声 */
   #btnClear{ left:41.7%; width:17%;  top:63.7%; height:5.0%; }     /* クリア */
@@ -82,205 +100,157 @@
 
 <script>
 (() => {
-  /* ======= 背景图（固定用 assets/ui.jpg） ======= */
+  /* ===== 背景图（固定 assets/ui.jpg）并按真实比例设置容器高度，避免错位 ===== */
   const UI_FILE = 'assets/ui.jpg';
+  const wrap = document.getElementById('wrap');
   const bgImg = document.getElementById('bg');
   const imgMissing = document.getElementById('imgMissing');
-  bgImg.onload = () => { imgMissing.style.display = 'none'; };
+
+  function fitWrapToImage(){
+    // 用图片天然宽高计算比例，按当前 wrap 宽度设定高度
+    const W = wrap.clientWidth;
+    const r = bgImg.naturalHeight / bgImg.naturalWidth; // 高/宽
+    if (isFinite(r) && r > 0){
+      wrap.style.height = (W * r) + 'px';
+    }
+  }
+  bgImg.onload = () => { imgMissing.style.display = 'none'; fitWrapToImage(); };
   bgImg.onerror = () => { imgMissing.style.display = 'block'; };
   bgImg.src = UI_FILE;
+  // 窗口尺寸变化时也自适应一次
+  window.addEventListener('resize', ()=>{ if(bgImg.complete && bgImg.naturalWidth) fitWrapToImage(); });
 
-  /* ======= 声音名 → 文件基名（不带后缀） ======= */
+  /* ===== 声音名 → 基名（不带后缀），播放器与规则沿用上版（省略注释） ===== */
   const SND = {
-    openPhone:  'open phone',
-    ringStart:  'ring',
-    enter:      'enter',
-    key:        'key1',
-    key5_2:     'key5_2',
-    key5_3:     'key5_3',
-    standBy:    'stand by',
-    complete:   'complete',
-    release:    'release',
-    error:      'error',
-    ready:      'ready',
-    exceed:     'exceed charge',
-    weaponHit:  'weaponHit'
+    openPhone:'open phone', ringStart:'ring', enter:'enter',
+    key:'key1', key5_2:'key5_2', key5_3:'key5_3',
+    standBy:'stand by', complete:'complete', release:'release',
+    error:'error', ready:'ready', exceed:'exceed charge',
+    weaponHit:'weaponHit'
   };
 
-  /* ======= 低延迟播放器：优先 WebAudio（解码缓存），失败退回 <audio> ======= */
-  let started=false, ringing=null;
-  let AC = null;
+  let started=false, ringing=null, AC=null;
   const mimeByExt = { m4a:'audio/mp4', mp3:'audio/mpeg', wav:'audio/wav', mp4:'audio/mp4' };
   const extOrder = ['m4a','mp3','wav','mp4'];
 
-  // 生成候选 URL（过滤明显不支持的容器）
   function candidates(base){
-    const t = document.createElement('audio');
-    const out = [];
-    for(const ext of extOrder){
-      const mime = mimeByExt[ext] || '';
-      if (!mime || t.canPlayType(mime) !== '') out.push(`assets/${base}.${ext}`);
-    }
+    const t = document.createElement('audio'); const out=[];
+    for(const ext of extOrder){ const mime=mimeByExt[ext]||''; if(!mime || t.canPlayType(mime)!=='') out.push(`assets/${base}.${ext}`); }
     return out;
   }
 
-  // —— WebAudio 缓存 —— //
-  const waBuf = new Map();   // name -> AudioBuffer
-  const waFail = new Set();  // name 彻底失败就记下，避免重复抓
+  const waBuf=new Map(), waFail=new Set();
   async function waLoadOnce(name){
     if(waBuf.has(name) || waFail.has(name)) return;
-    const base = SND[name]; if(!base) { waFail.add(name); return; }
-    const urls = candidates(base);
-    for(const url of urls){
+    const base=SND[name]; if(!base){ waFail.add(name); return; }
+    for(const url of candidates(base)){
       try{
-        const res = await fetch(url, {cache:'force-cache'});
-        if(!res.ok) continue;
-        const arr = await res.arrayBuffer();
-        const buf = await AC.decodeAudioData(arr);
-        waBuf.set(name, buf);
-        return;
-      }catch(e){ /* 换下一个候选 */ }
+        const res=await fetch(url,{cache:'force-cache'}); if(!res.ok) continue;
+        const arr=await res.arrayBuffer(); const buf=await AC.decodeAudioData(arr);
+        waBuf.set(name, buf); return;
+      }catch{}
     }
     waFail.add(name);
   }
   function waPlay(name, {loop=false, delayMs=0}={}){
-    const buf = waBuf.get(name);
-    if(!buf) return null;
-    const src = AC.createBufferSource();
-    const gain = AC.createGain();
-    src.buffer = buf; src.loop = !!loop;
-    src.connect(gain).connect(AC.destination);
-    const start = () => src.start();
-    if(delayMs>0) setTimeout(start, delayMs); else start();
+    const buf=waBuf.get(name); if(!buf) return null;
+    const src=AC.createBufferSource(), g=AC.createGain();
+    src.buffer=buf; src.loop=!!loop; src.connect(g).connect(AC.destination);
+    const start=()=>src.start(); if(delayMs>0) setTimeout(start, delayMs); else start();
     return { stop:()=>{ try{src.stop();}catch{} } };
   }
-
-  // —— HTMLAudio 退路 —— //
   function htmlPlay(name, {loop=false, delayMs=0}={}){
-    const base = SND[name]; if(!base) return null;
-    const urls = candidates(base);
-    if(!urls.length) return null;
-    const a = new Audio();
-    a.preload = 'auto'; a.playsInline = true; a.loop = !!loop;
-    const tryUrl = (i) => {
-      if(i>=urls.length) return;
-      a.onerror = () => tryUrl(i+1);
-      a.src = urls[i];
-      const start = () => a.play().catch(()=>{});
-      if(delayMs>0) setTimeout(start, delayMs); else start();
-    };
-    tryUrl(0);
+    const base=SND[name]; if(!base) return null;
+    const urls=candidates(base); if(!urls.length) return null;
+    const a=new Audio(); a.preload='auto'; a.playsInline=true; a.loop=!!loop;
+    const go=i=>{ if(i>=urls.length) return;
+      a.onerror=()=>go(i+1); a.src=urls[i];
+      const start=()=>a.play().catch(()=>{}); if(delayMs>0) setTimeout(start, delayMs); else start();
+    }; go(0);
     return { stop:()=>{ try{a.pause();}catch{} } };
   }
-
   function beep(freq=520, ms=90, type='square', vol=0.22){
     try{
-      const C = window.AudioContext||window.webkitAudioContext; if(!C) return;
-      const ac = AC || new C(); AC = ac;
+      const C=window.AudioContext||window.webkitAudioContext; if(!C) return;
+      const ac=AC||new C(); AC=ac;
       const o=ac.createOscillator(), g=ac.createGain();
       o.type=type; o.frequency.value=freq; g.gain.value=vol;
-      o.connect(g).connect(ac.destination); o.start();
-      setTimeout(()=>{ try{o.stop();}catch{} }, ms);
+      o.connect(g).connect(ac.destination); o.start(); setTimeout(()=>{ try{o.stop();}catch{} }, ms);
     }catch{}
   }
-
-  // 统一 play：优先 WebAudio（有缓存）→ HTMLAudio → 蜂鸣
   function play(name, opts={}){
-    if(AC && waBuf.has(name)){
-      const h = waPlay(name, opts); if(h) return h;
-    }
-    const h2 = htmlPlay(name, opts);
-    if(h2) return h2;
+    if(AC && waBuf.has(name)){ const h=waPlay(name, opts); if(h) return h; }
+    const h2=htmlPlay(name, opts); if(h2) return h2;
     beep(); return null;
   }
-
   function stopRinging(){ if(ringing){ try{ringing.stop?.();}catch{} ringing=null; } }
   function anyKeyInterruptRing(){ stopRinging(); }
 
-  // 首次解锁：建立 AudioContext、预加载常用音效，播放开机声
   async function unlock(){
-    if(started) return;
-    started = true;
-    const C = window.AudioContext||window.webkitAudioContext;
-    if(C){
-      try{
-        AC = new C();
-        // 预热：把高频音效解码进缓存（减少后续延迟）
-        const preloadList = [
-          'openPhone','enter','key','key5_2','key5_3','standBy','complete',
-          'release','error','ready','exceed','weaponHit','ringStart'
-        ];
-        await Promise.all(preloadList.map(n=>waLoadOnce(n)));
-      }catch(e){ /* 失败就走 <audio> 退路 */ }
-    }
+    if(started) return; started=true;
+    const C=window.AudioContext||window.webkitAudioContext;
+    if(C){ try{
+      AC=new C();
+      const preload=['openPhone','enter','key','key5_2','key5_3','standBy','complete','release','error','ready','exceed','weaponHit','ringStart'];
+      await Promise.all(preload.map(n=>waLoadOnce(n)));
+    }catch{} }
     play('openPhone');
   }
 
-  /* ======= 规则状态（含你所有更新） ======= */
+  /* ===== 规则 ===== */
   let buf='', transformed=false, armedStandby=false, armedReady=false;
 
   function pushKey(k){
     unlock(); anyKeyInterruptRing();
-
     if(k==='*'){ play('weaponHit'); buf=(buf+k).slice(-4); return; }
-
     if(k==='5'){
       const fiveCount=(buf.match(/5+$/)?.[0]?.length||0)+1;
-      if(fiveCount===1) play('key');
-      else if(fiveCount===2) play('key5_2');
-      else play('key5_3');
-    }else{
-      play('key');
-    }
+      if(fiveCount===1) play('key'); else if(fiveCount===2) play('key5_2'); else play('key5_3');
+    }else{ play('key'); }
     buf=(buf+k).slice(-4);
   }
 
   function onEnter(){
     unlock(); anyKeyInterruptRing();
-    const last3 = buf.slice(-3);
+    const last3=buf.slice(-3);
 
-    if(transformed && (last3==='106' || last3==='103')){ play('enter'); return; }
-
+    if(transformed && (last3==='106'||last3==='103')){ play('enter'); return; }
     if(armedStandby){ armedStandby=false; play('complete'); transformed=true; armedReady=false; return; }
 
     if(transformed){
       if(!armedReady){ play('ready'); armedReady=true; return; }
-      play('enter'); play('exceed', {delayMs:120}); armedReady=false; return;
+      play('enter'); play('exceed',{delayMs:120}); armedReady=false; return;
     }
 
     if(last3==='555'){ play('enter'); play('standBy'); armedStandby=true; return; }
-    if(last3==='106' || last3==='103'){ play('enter'); return; }
+    if(last3==='106'||last3==='103'){ play('enter'); return; }
 
     if(buf.length===3 && last3!=='3821'){
-      play('enter'); play('error', {delayMs:40});
+      play('enter'); play('error',{delayMs:40});
       buf=''; armedStandby=false; armedReady=false; return;
     }
     play('enter');
   }
 
-  function onRingStart(){ unlock(); stopRinging(); ringing = play('ringStart', {loop:true}); }
+  function onRingStart(){ unlock(); stopRinging(); ringing=play('ringStart',{loop:true}); }
   function onRingStop(){ unlock(); play('key'); stopRinging(); }
   function onClear(){
     unlock(); anyKeyInterruptRing();
-    play('key'); play('release', {delayMs:40});
+    play('key'); play('release',{delayMs:40});
     transformed=false; armedStandby=false; armedReady=false; buf='';
   }
 
-  // 绑定点击（阻断 300ms 延迟 & 防系统手势干扰）
-  const bind = (el, fn) => {
-    el.addEventListener('pointerdown', e=>{ e.preventDefault(); fn(); }, {passive:false});
-    el.addEventListener('click', e=>{ e.preventDefault(); }, {passive:false});
-  };
+  // 绑定（pointerdown 规避点击延迟）
+  const bind=(el,fn)=>{ el.addEventListener('pointerdown',e=>{ e.preventDefault(); fn(); }, {passive:false}); };
   bind(document.getElementById('btnEnter'), onEnter);
   bind(document.getElementById('btnRing'),  onRingStart);
   bind(document.getElementById('btnStop'),  onRingStop);
   bind(document.getElementById('btnClear'), onClear);
   ['k1','k2','k3','k4','k5','k6','k7','k8','k9','kStar','k0','kHash'].forEach(id=>{
-    const el = document.getElementById(id);
-    bind(el, ()=>pushKey(el.dataset.k));
+    bind(document.getElementById(id), ()=>pushKey(document.getElementById(id).dataset.k));
   });
 
-  // 任一首次手势 → 解锁音频并预热
+  // 首次手势 → 解锁音频并预热
   ['pointerdown','touchstart','click','keydown'].forEach(ev=>{
     window.addEventListener(ev, ()=>{ unlock(); }, {once:true, passive:true});
   });
