@@ -2,10 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<meta
-  name="viewport"
-  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
-/>
+<meta name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>FAIZ Phone</title>
 <style>
   :root{ --bg:#0b0f19; }
@@ -75,13 +73,14 @@
     <button id="kHash" class="hot" data-k="#"></button>
   </div>
 
-  <div class="footer">首次点击将解锁音频。音效文件放在 <code>assets/</code> 下即可使用。</div>
+  <div class="footer">
+    首次点击将解锁音频。把音效放在 <code>assets/</code> 下即可：支持 <code>.m4a</code>、<code>.mp3</code>、<code>.wav</code>、<code>.mp4</code>（同名任选其一或都放；会自动择优/回退）。
+  </div>
 </div>
 
 <script>
 (() => {
-  /* ========== 音效文件映射（assets 下） ========== */
-  const asset = (name) => `assets/${name}.m4a`;
+  /* ========== 声音名 → “文件基名”（不带后缀） ========== */
   const SND = {
     openPhone:  'open phone',
     ringStart:  'ring',
@@ -95,26 +94,56 @@
     error:      'error',
     ready:      'ready',
     exceed:     'exceed charge',
-    weaponHit:  'weaponHit'     // 星号键
+    weaponHit:  'weaponHit'     // 星号：武器打击
   };
 
-  /* ========== 简易播放器（<audio>，低接入延迟） ========== */
+  /* ========== 播放器：m4a → mp3 → wav → mp4（按支持度筛选 + 自动回退） ========== */
   let started=false, ringing=null;
-  function unlock(){
-    if(!started){
-      started=true;
-      play('openPhone');
+
+  const mimeByExt = {
+    m4a: 'audio/mp4',    // AAC in MP4 container
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    mp4: 'audio/mp4'
+  };
+  const extOrder = ['m4a','mp3','wav','mp4'];  // 优先顺序（iOS优先AAC/MP3）
+
+  function buildCandidates(base){
+    // 生成候选 URL，并按 canPlayType 过滤不支持的容器
+    const testAudio = document.createElement('audio');
+    const list = [];
+    for(const ext of extOrder){
+      const mime = mimeByExt[ext] || '';
+      if (!mime || testAudio.canPlayType(mime) !== '') {
+        // 空字符串=未知也允许尝试；'maybe'/'probably' 优先，但我们全部保留，后续 onerror 回退
+        list.push(`assets/${base}.${ext}`);
+      }
     }
+    return list;
   }
+
   function play(name, {loop=false, delayMs=0}={}){
-    const file = SND[name];
-    if(!file){ beep(); return null; }
-    const a = new Audio(asset(file));
-    a.preload='auto'; a.loop=!!loop;
-    const start = () => a.play().catch(()=>{});
-    if (delayMs>0) setTimeout(start, delayMs); else start();
+    const base = SND[name];
+    if(!base){ beep(); return null; }
+
+    const urls = buildCandidates(base);
+    if (urls.length===0){ beep(); return null; }
+
+    const a = new Audio();
+    a.preload = 'auto';
+    a.loop = !!loop;
+
+    const tryUrl = (i) => {
+      if(i >= urls.length){ beep(); return; }
+      a.onerror = () => tryUrl(i+1);
+      a.src = urls[i];
+      const start = () => a.play().catch(()=>{ /* 等用户交互解锁后重试 */ });
+      if(delayMs>0) setTimeout(start, delayMs); else start();
+    };
+    tryUrl(0);
     return a;
   }
+
   function beep(freq=520, ms=120, type='square', vol=0.22){
     try{
       const C = window.AudioContext||window.webkitAudioContext; if(!C) return;
@@ -127,7 +156,9 @@
   function stopRinging(){ if(ringing){ try{ringing.pause();}catch{} ringing=null; } }
   function anyKeyInterruptRing(){ stopRinging(); }
 
-  /* ========== 规则状态 ========== */
+  function unlock(){ if(!started){ started=true; play('openPhone'); } }
+
+  /* ========== 规则状态（与你之前一致 + 最近更新） ========== */
   const SPECIAL_STAGE = ['555','106','103']; // 三段按键音组合
   let buf='', transformed=false, armedStandby=false, armedReady=false;
 
@@ -156,26 +187,25 @@
 
     const last3 = buf.slice(-3);
 
-    // —— 变身态下的更新规则 —— 
-    // 若缓冲是 106/103：只触发 enter，不走 ready/exceed
+    // 变身态 + 106/103：只触发 enter
     if(transformed && (last3==='106' || last3==='103')){
       play('enter');
       return;
     }
 
-    // 处于 555->stand by 后：本次完成变身（不播 enter）
+    // 555 -> stand by 流程：本次完成（不播 enter）
     if(armedStandby){
       armedStandby=false; play('complete'); transformed=true; armedReady=false; return;
     }
 
     if(transformed){
-      // 第一次按 ENTER：ready（无 enter 声）
+      // 第一次 ENTER：ready（无 enter）
       if(!armedReady){ play('ready'); armedReady=true; return; }
-      // 第二次按 ENTER：enter + exceed
+      // 第二次 ENTER：enter + exceed
       play('enter'); play('exceed', {delayMs:120}); armedReady=false; return;
     }
 
-    // —— 未变身态 —— 
+    // 未变身态
     if(last3==='555'){
       play('enter'); play('standBy'); armedStandby=true; return;
     }
@@ -183,12 +213,13 @@
       play('enter'); return;
     }
 
-    // 非 {555,106,103,3821} 的组合：enter 后 error，并重置
+    // 非 {555,106,103,3821} 的三位组合：enter 后 error 并重置
     if(buf.length===3 && last3!=='3821'){
-      play('enter'); play('error', {delayMs:40}); buf=''; armedStandby=false; armedReady=false; return;
+      play('enter'); play('error', {delayMs:40});
+      buf=''; armedStandby=false; armedReady=false; return;
     }
 
-    // 3821 默认只给 enter（如需加独立音效可自行扩展）
+    // 3821：默认 enter（如需独立音效可扩展）
     play('enter');
   }
 
@@ -196,7 +227,7 @@
   function onRingStop(){ unlock(); play('key'); stopRinging(); }
   function onClear(){
     unlock(); anyKeyInterruptRing();
-    // クリア：触发 key → release；并退出变身态
+    // クリア：按键声后释放，并退出变身态
     play('key'); play('release', {delayMs:40});
     transformed=false; armedStandby=false; armedReady=false; buf='';
   }
@@ -210,7 +241,7 @@
     const el=document.getElementById(id); el.addEventListener('click', ()=>pushKey(el.dataset.k));
   });
 
-  // 首次手势尽快解锁
+  // 首次手势尽快“解锁”音频
   ['pointerdown','touchstart','click','keydown'].forEach(ev=>{
     window.addEventListener(ev, ()=>{ try{unlock();}catch{} }, {once:true, passive:true});
   });
