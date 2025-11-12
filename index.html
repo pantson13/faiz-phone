@@ -7,28 +7,21 @@
 <title>FAIZ Phone</title>
 <style>
   :root{
-    /* 背景图路径 */
     --ui: url('assets/ui.jpg');
 
-    /* ====== 仅需微调的 6 个参数（百分比，针对 708×1536 参考图）====== */
-    /* ENTER 左上基准（相对整张图的百分比） */
+    /* 只需微调这几项（百分比，基于 708×1536 参考图） */
     --enter-left: 20.5%;
     --enter-top:  59.6%;
-    /* ENTER 尺寸（已按 280×90px 折算百分比） */
-    --enter-w: 39.55%;
-    --enter-h: 5.86%;
+    --enter-w:    39.55%;
+    --enter-h:    5.86%;
 
-    /* 第二行“铃声/クリア/停止”左上基准（相对整张图的百分比） */
     --row2-left:  23.5%;
     --row2-top:   65.1%;
 
-    /* 行/列间距（由 40px 横距、33px 竖距 折算百分比） */
-    --gap-x: 5.65%;
-    --gap-y: 2.15%;
-
-    /* 数字键尺寸（由 159×118px 折算百分比） */
-    --key-w: 22.45%;
-    --key-h: 7.68%;
+    --gap-x: 5.65%;   /* ≈ 40px */
+    --gap-y: 2.15%;   /* ≈ 33px */
+    --key-w: 22.45%;  /* ≈ 159px */
+    --key-h: 7.68%;   /* ≈ 118px */
 
     --bg:#000; --fg:#fff;
   }
@@ -36,35 +29,19 @@
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent }
   html,body{ height:100%; margin:0; background:var(--bg); color:var(--fg); }
   body{ display:flex; justify-content:center; }
+  .wrap{ width:min(94vw, 520px); margin:12px auto 48px; }
 
-  .wrap{
-    width:min(94vw, 520px);
-    margin:12px auto 48px;
-  }
-  /* 用<img>承载原图，绝对定位按钮会跟着图一起滚动，不会错位/裁切 */
-  .phone{
-    position:relative;
-    width:100%;
-  }
-  .phone img{
-    width:100%;
-    height:auto;
-    display:block;
-    user-select:none;
-    pointer-events:none;
-  }
+  .phone{ position:relative; width:100%; }
+  .phone img{ width:100%; height:auto; display:block; user-select:none; pointer-events:none; }
 
-  /* 绝对定位的可点区域 */
   .hit{
-    position:absolute;
-    border:none; outline:none; background:transparent;
+    position:absolute; border:none; outline:none; background:transparent;
     touch-action:manipulation; user-select:none; -webkit-user-select:none;
-    transform-origin:center; 
+    transform-origin:center;
   }
   .hit:active{ transform:scale(.98); }
-
-  /* 隐藏可视边框；如需临时校准，取消下面注释可看到半透明红块 */
-  /* .hit{ background:rgba(255,0,0,.28); border-radius:6px; } */
+  /* 校准请临时取消注释： */
+  /* .hit{ background:rgba(255,0,0,.25); border-radius:6px; } */
 </style>
 </head>
 <body>
@@ -72,8 +49,8 @@
     <div class="phone" id="phone">
       <img src="assets/ui.jpg" alt="FAIZ UI" id="ui"/>
 
-      <!-- ENTER（独占一行） -->
-      <button class="hit" id="btnEnter"></button>
+      <!-- ENTER -->
+      <button class="hit" id="btnEnter" aria-label="ENTER"></button>
 
       <!-- 第二行：铃声 / クリア / 停止 -->
       <button class="hit" id="btnRing"  aria-label="铃声"></button>
@@ -81,76 +58,96 @@
       <button class="hit" id="btnStop"  aria-label="停止"></button>
 
       <!-- 数字键 1~9、*0# -->
-      <button class="hit" data-k="1"></button>
-      <button class="hit" data-k="2"></button>
-      <button class="hit" data-k="3"></button>
+      <button class="hit" data-k="1" aria-label="1"></button>
+      <button class="hit" data-k="2" aria-label="2"></button>
+      <button class="hit" data-k="3" aria-label="3"></button>
 
-      <button class="hit" data-k="4"></button>
-      <button class="hit" data-k="5"></button>
-      <button class="hit" data-k="6"></button>
+      <button class="hit" data-k="4" aria-label="4"></button>
+      <button class="hit" data-k="5" aria-label="5"></button>
+      <button class="hit" data-k="6" aria-label="6"></button>
 
-      <button class="hit" data-k="7"></button>
-      <button class="hit" data-k="8"></button>
-      <button class="hit" data-k="9"></button>
+      <button class="hit" data-k="7" aria-label="7"></button>
+      <button class="hit" data-k="8" aria-label="8"></button>
+      <button class="hit" data-k="9" aria-label="9"></button>
 
-      <button class="hit" data-k="*"></button>
-      <button class="hit" data-k="0"></button>
-      <button class="hit" data-k="#"></button>
+      <button class="hit" data-k="*" aria-label="*"></button>
+      <button class="hit" data-k="0" aria-label="0"></button>
+      <button class="hit" data-k="#" aria-label="#"></button>
     </div>
   </div>
 
 <script>
 (() => {
-  /* ========== 音频资源（任意后缀：mp3/mp4/m4a/wav 均可） ========== */
-  const ASSET = {
-    openPhone: 'assets/open phone.mp3',
-    ring:      'assets/ring.mp3',
-    enter:     'assets/enter.mp3',
-    key1:      'assets/key1.mp3',
-    key5_2:    'assets/key5_2.mp3',
-    key5_3:    'assets/key5_3.mp3',
-    standBy:   'assets/stand by.mp3',
-    complete:  'assets/complete.mp3',
-    error:     'assets/error.mp3',
-    ready:     'assets/ready.mp3',
-    exceed:    'assets/exceed charge.mp3',
-    release:   'assets/release.mp3',
-    combo3821: 'assets/3821.mp3',
-    weaponHit: 'assets/weaponHit.mp3' // 变身后 * 号专用
+  /* ---------- 资源名（不写扩展名），会按 .m4a → .mp3 → .wav → .mp4 依次探测 ---------- */
+  const BASE = {
+    openPhone: 'assets/open phone',
+    ring:      'assets/ring',
+    enter:     'assets/enter',
+    key1:      'assets/key1',
+    key5_2:    'assets/key5_2',
+    key5_3:    'assets/key5_3',
+    standBy:   'assets/stand by',
+    complete:  'assets/complete',
+    error:     'assets/error',
+    ready:     'assets/ready',
+    exceed:    'assets/exceed charge',
+    release:   'assets/release',
+    combo3821: 'assets/3821',
+    weaponHit: 'assets/weaponHit' // 变身后 * 号
   };
+  const EXT = ['.m4a','.mp3','.wav','.mp4'];
+  const urlMap = {}; // 真实可用的 url
 
-  /* ========== 低延迟播放（Web Audio） ========== */
+  /* ---------- WebAudio 播放 ---------- */
   let ac=null, master=null;
   const buffers=new Map();
+
   function ctx(){ if(ac) return ac; const C=window.AudioContext||window.webkitAudioContext; ac=new C({latencyHint:'interactive'}); master=ac.createGain(); master.gain.value=1; master.connect(ac.destination); return ac; }
-  async function load(k){ if(buffers.has(k)) return buffers.get(k); const url=ASSET[k]; if(!url) return null; const res=await fetch(url,{cache:'no-store'}); if(!res.ok) return null; const arr=await res.arrayBuffer(); const b=await ctx().decodeAudioData(arr); buffers.set(k,b); return b; }
-  function play(k,{loop=false}={}){ const b=buffers.get(k); if(!b) return null; const s=ctx().createBufferSource(); s.buffer=b; s.loop=!!loop; s.connect(master); s.start(); return s; }
+
+  async function resolveUrl(base){
+    if(urlMap[base]) return urlMap[base];
+    for(const ext of EXT){
+      const u = `${base}${ext}`;
+      try{ const r = await fetch(u,{method:'HEAD',cache:'no-store'}); if(r.ok){ urlMap[base]=u; return u; } }catch{}
+    }
+    return null;
+  }
+
+  async function load(key){
+    if(buffers.has(key)) return buffers.get(key);
+    const base = BASE[key]; if(!base) return null;
+    const url = await resolveUrl(base); if(!url) return null;
+    const res = await fetch(url,{cache:'no-store'}); if(!res.ok) return null;
+    const arr = await res.arrayBuffer();
+    const b = await ctx().decodeAudioData(arr);
+    buffers.set(key,b); return b;
+  }
+
+  function play(key,{loop=false}={}){
+    const b = buffers.get(key); if(!b) return null;
+    const s = ctx().createBufferSource();
+    s.buffer=b; s.loop=!!loop; s.connect(master); s.start();
+    return s;
+  }
   function stop(n){ if(n&&n.stop){ try{n.stop();}catch{} } }
 
-  /* ========== 交互状态 ========== */
-  const COMBOS = ['555','106','103'];
+  /* ---------- 逻辑状态 ---------- */
+  const COMBOS=['555','106','103'];
   let buf='', transformed=false, armed=false, readyOnce=false;
   let ringNode=null, standNode=null;
 
-  function stageOf(s){
-    for(const c of COMBOS){ if(c.startsWith(s)) return s.length; }
-    return 0;
-  }
+  function stageOf(s){ for(const c of COMBOS){ if(c.startsWith(s)) return s.length; } return 0; }
   function interruptRing(){ if(ringNode){ stop(ringNode); ringNode=null; } }
 
   async function unlock(){
-    const c=ctx();
-    try{ if(c.state==='suspended') await c.resume(); }catch{}
-    await Promise.all(Object.keys(ASSET).map(k=>load(k).catch(()=>null)));
+    const c=ctx(); try{ if(c.state==='suspended') await c.resume(); }catch{}
+    await Promise.all(Object.keys(BASE).map(k=>load(k).catch(()=>null)));
     play('openPhone');
-    document.removeEventListener('pointerdown',unlockOnce,true);
-    document.removeEventListener('touchend',unlockOnce,true);
-    document.removeEventListener('click',unlockOnce,true);
   }
-  const unlockOnce=()=>unlock();
+  const unlockOnce=()=>{ unlock(); document.removeEventListener('pointerdown',unlockOnce,true); document.removeEventListener('touchend',unlockOnce,true); document.removeEventListener('click',unlockOnce,true); };
   ['pointerdown','touchend','click'].forEach(ev=>document.addEventListener(ev,unlockOnce,{once:true,passive:true}));
 
-  async function pressDigit(k){
+  function pressDigit(k){
     interruptRing();
     const s=(buf+k).slice(-3);
     const stage=stageOf(s);
@@ -161,14 +158,10 @@
 
   function onEnter(){
     interruptRing();
-
-    // 变身后：第一次 ENTER 播 ready；第二次 播 enter + exceed
     if(transformed){
       if(!readyOnce){ play('ready'); readyOnce=true; return; }
       play('enter'); play('exceed'); readyOnce=false; return;
     }
-
-    // 已经 Stand by → 完成
     if(armed){
       stop(standNode); standNode=null;
       const s=play('complete');
@@ -176,107 +169,75 @@
       if(s) s.onended=done; else setTimeout(done,380);
       return;
     }
-
-    // 普通 ENTER
     play('enter');
-
-    // 555 → Stand by（等待下一次 ENTER 完成）
-    if(buf==='555'){
-      stop(standNode); standNode=play('standBy'); if(standNode) standNode.onended=()=>standNode=null;
-      armed=true; return;
-    }
-
-    // 106/103：按 ENTER 只播 enter（已播）
-    if(buf==='106' || buf==='103'){ return; }
-
-    // 其它 3 位组合：enter 后 error，并重置
-    if(buf.length===3 && buf!=='3821'){
-      play('error'); buf=''; armed=false; readyOnce=false; return;
-    }
+    if(buf==='555'){ stop(standNode); standNode=play('standBy'); if(standNode) standNode.onended=()=>standNode=null; armed=true; return; }
+    if(buf==='106'||buf==='103'){ return; }
+    if(buf.length===3 && buf!=='3821'){ play('error'); buf=''; armed=false; readyOnce=false; }
   }
 
   function onStar(){
     interruptRing();
-    if(transformed){ play('weaponHit'); } else { play('key1'); }
-    buf=(buf+'*').slice(-3); // 星号不参与三段逻辑，仅保持缓冲长度
+    if(transformed) play('weaponHit'); else play('key1');
+    buf=(buf+'*').slice(-3);
   }
-
   function ringStart(){ interruptRing(); ringNode=play('ring',{loop:true}); }
   function ringStop(){ interruptRing(); }
-
   function onClear(){
     interruptRing();
     if(!transformed){ play('key1'); buf=''; return; }
     play('key1'); const s=play('release'); const done=()=>{ transformed=false; armed=false; readyOnce=false; buf=''; }; if(s) s.onended=done; else done();
   }
 
-  /* ========== 绑定事件 ========== */
+  /* ---------- 绑定 ---------- */
   document.querySelectorAll('.hit[data-k]').forEach(b=>{
     const k=b.dataset.k;
-    if(k==='*'){ b.addEventListener('click', onStar); }
-    else{ b.addEventListener('click', ()=>pressDigit(k)); }
+    if(k==='*') b.addEventListener('click', onStar);
+    else        b.addEventListener('click', ()=>pressDigit(k));
   });
   document.getElementById('btnEnter').addEventListener('click', onEnter);
   document.getElementById('btnRing').addEventListener('click', ringStart);
   document.getElementById('btnStop').addEventListener('click', ringStop);
   document.getElementById('btnClear').addEventListener('click', onClear);
 
-  /* ========== 按钮定位（基于 708×1536 参考图，转百分比） ========== */
-  function placeButtons(){
-    const phone = document.getElementById('phone');
-    const img   = document.getElementById('ui');
-    const W = 708, H = 1536; // 参考分辨率
+  /* ---------- 按钮定位（用百分比，修复“无交互”） ---------- */
+  function place(){
+    const css = getComputedStyle(document.documentElement);
+    const enter = document.getElementById('btnEnter');
+    setPct(enter, '--enter-left','--enter-top','--enter-w','--enter-h');
 
-    // ENTER
-    const btnEnter = document.getElementById('btnEnter');
-    setRect(btnEnter, p('--enter-left'), p('--enter-top'), p('--enter-w'), p('--enter-h'));
+    const ring  = document.getElementById('btnRing');
+    const clear = document.getElementById('btnClear');
+    const stopB = document.getElementById('btnStop');
 
-    // 行列参数
-    const r2L = p('--row2-left');
-    const r2T = p('--row2-top');
-    const gapX= p('--gap-x');
-    const gapY= p('--gap-y');
-    const keyW= p('--key-w');
-    const keyH= p('--key-h');
+    const r2L = pct('--row2-left'), r2T = pct('--row2-top');
+    const gapX= pct('--gap-x'),     gapY = pct('--gap-y');
+    const keyW= pct('--key-w'),     keyH = pct('--key-h');
 
-    // 第二行：铃声/清除/停止
-    const btnRing  = document.getElementById('btnRing');
-    const btnClear = document.getElementById('btnClear');
-    const btnStop  = document.getElementById('btnStop');
+    setRectPct(ring , r2L,                     r2T, keyW, keyH);
+    setRectPct(clear, r2L + keyW + gapX,       r2T, keyW, keyH);
+    setRectPct(stopB, r2L + (keyW+gapX)*2,     r2T, keyW, keyH);
 
-    setRect(btnRing , r2L,               r2T, keyW, keyH);
-    setRect(btnClear, r2L + keyW + gapX, r2T, keyW, keyH);
-    setRect(btnStop , r2L + (keyW+gapX)*2, r2T, keyW, keyH);
-
-    // 数字键网格（从第三行开始 1~9、*0#）
-    const keys = [...document.querySelectorAll('.hit[data-k]')];
-    // 数字区左上为第三行第一列
-    const gridStartL = r2L;
-    const gridStartT = r2T + keyH + gapY;
-
-    // 依次摆放 4 行 × 3 列
-    keys.forEach((el, idx)=>{
-      const row = Math.floor(idx/3); // 0..3
-      const col = idx%3;            // 0..2
-      const left = gridStartL + col*(keyW+gapX);
-      const top  = gridStartT + row*(keyH+gapY);
-      setRect(el, left, top, keyW, keyH);
+    const keys=[...document.querySelectorAll('.hit[data-k]')];
+    const startL=r2L, startT=r2T + keyH + gapY;
+    keys.forEach((el,i)=>{
+      const row=Math.floor(i/3), col=i%3;
+      const L=startL + col*(keyW+gapX);
+      const T=startT + row*(keyH+gapY);
+      setRectPct(el, L, T, keyW, keyH);
     });
 
-    function p(varName){
-      return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(varName)) || 0;
-    }
-    function setRect(el, lPct, tPct, wPct, hPct){
-      el.style.left = lPct;
-      el.style.top  = tPct;
-      el.style.width  = wPct;
-      el.style.height = hPct;
+    function pct(varName){ return parseFloat(css.getPropertyValue(varName)) || 0; }
+    function setPct(el, l,t,w,h){ setRectPct(el, pct(l), pct(t), pct(w), pct(h)); }
+    function setRectPct(el, l,t,w,h){
+      el.style.left = l + '%';
+      el.style.top  = t + '%';
+      el.style.width  = w + '%';
+      el.style.height = h + '%';
     }
   }
-  window.addEventListener('load', placeButtons);
-  window.addEventListener('resize', placeButtons);
+  window.addEventListener('load', place);
+  window.addEventListener('resize', place);
 
-  /* 禁止 iOS 捏合缩放（避免误触放大） */
   ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
     document.addEventListener(ev, e=>e.preventDefault(), {passive:false});
   });
