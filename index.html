@@ -2,224 +2,218 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+/>
 <title>FAIZ Phone</title>
 <style>
-  :root{
-    /* 皮肤图路径，按你的仓库实际文件改 */
-    --ui-src: 'assets/ui.jpg';
+  :root{ --bg:#0b0f19; }
+  html,body{margin:0;background:var(--bg);color:#fff;-webkit-text-size-adjust:100%}
+  .page{ min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:24px; padding:24px 0 80px; }
 
-    /* —— 键区相对整张图的“内边距”，百分比，可微调 —— */
-    --frame-top: 47.5%;
-    --frame-bottom: 6.5%;
-    --frame-left: 16%;
-    --frame-right: 16%;
-
-    --bg:#0b0f19; --bg-red:#7f1d1d; --fg:#fff;
-  }
-  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{height:100%;margin:0}
-  body{
-    background:var(--bg); color:var(--fg);
-    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
-    -webkit-text-size-adjust:100%;
-    touch-action:manipulation; user-select:none; -webkit-user-select:none;
-  }
-
-  /* 页面允许滚动：容器非 fixed，用 margin 居中 */
-  .phone{
+  /* 手机图容器：相对定位，内部热区绝对定位（百分比），随图自适应缩放 */
+  .phone-wrap{
     position:relative;
-    width:min(94vw,520px);
-    margin:32px auto 80px;   /* 页面可上下滚动 */
+    width:min(92vw, 520px);
+    aspect-ratio: 708 / 1536;               /* 按你的图比例 */
+    background:#000 url('assets/phone-ui.jpg') center/cover no-repeat;
+    border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.45);
+    overflow:hidden; touch-action:manipulation;
   }
 
-  /* 皮肤图片 */
-  .bg{ width:100%; height:auto; display:block; }
-
-  /* 覆盖在图上的透明按钮层（跟随图片缩放 & 滚动）*/
-  .frame{
-    position:absolute; z-index:1;
-    left:var(--frame-left); right:var(--frame-right);
-    top:var(--frame-top);   bottom:var(--frame-bottom);
-    display:grid; grid-template-columns:repeat(3,1fr);
-    grid-auto-rows:1fr; gap:0.9vh;
+  .hot{
+    position:absolute; display:block; border-radius:10px;
+    background:rgba(255,255,255,0);
   }
+  .hot:active{ outline:2px solid rgba(255,255,255,.25); }
 
-  .hit{
-    background:transparent; border:none; outline:none;
-    touch-action:manipulation; -webkit-user-select:none; user-select:none;
-  }
-  .hit:active{ transform:scale(.98); }
+  /* —— 键区坐标（百分比），如需微调改这里 —— */
+  #btnEnter{ left:26.9%; width:46%;  top:56.6%; height:4.2%; }     /* ENTER */
+  #btnRing { left:21.0%; width:17%;  top:63.7%; height:5.0%; }     /* 铃声 */
+  #btnClear{ left:41.7%; width:17%;  top:63.7%; height:5.0%; }     /* クリア */
+  #btnStop { left:62.3%; width:17%;  top:63.7%; height:5.0%; }     /* 停止 */
 
-  /* 第一行：ENTER 独占三列 */
-  .enter{ grid-column:1 / 4; }
+  #k1{ left:26.4%; width:14%; top:69.7%; height:5.0%;}
+  #k2{ left:44.0%; width:14%; top:69.7%; height:5.0%;}
+  #k3{ left:61.6%; width:14%; top:69.7%; height:5.0%;}
+  #k4{ left:26.4%; width:14%; top:76.0%; height:5.0%;}
+  #k5{ left:44.0%; width:14%; top:76.0%; height:5.0%;}
+  #k6{ left:61.6%; width:14%; top:76.0%; height:5.0%;}
+  #k7{ left:26.4%; width:14%; top:82.3%; height:5.0%;}
+  #k8{ left:44.0%; width:14%; top:82.3%; height:5.0%;}
+  #k9{ left:61.6%; width:14%; top:82.3%; height:5.0%;}
+  #kStar{ left:26.4%; width:14%; top:88.6%; height:5.0%;}
+  #k0{    left:44.0%; width:14%; top:88.6%; height:5.0%;}
+  #kHash{ left:61.6%; width:14%; top:88.6%; height:5.0%;}
+
+  .footer{ width:min(92vw,520px); color:#9aa4b2; font-size:13px; line-height:1.6; padding:8px 2px 0; }
 </style>
 </head>
 <body>
+<div class="page">
 
-  <div class="phone" id="phone">
-    <!-- 如果图片不是 assets/ui.jpg，请改下面 src -->
-    <img id="ui" class="bg" src="assets/ui.jpg"
-         alt="图片未找到：请检查 assets/ui.jpg 路径与大小写" />
+  <div class="phone-wrap" id="wrap">
+    <!-- 功能键 -->
+    <button id="btnEnter" class="hot" aria-label="ENTER"></button>
+    <button id="btnRing"  class="hot" aria-label="铃声"></button>
+    <button id="btnClear" class="hot" aria-label="クリア"></button>
+    <button id="btnStop"  class="hot" aria-label="停止铃声"></button>
 
-    <!-- 透明点击层（与图片同容器，随滚动一起移动） -->
-    <div class="frame" id="frame">
-      <!-- 第1行：ENTER -->
-      <button class="hit enter" aria-label="ENTER" id="btnEnter"></button>
-
-      <!-- 第2行：铃声 / クリア / 停止 -->
-      <button class="hit ring"  aria-label="铃声" id="btnRing"></button>
-      <button class="hit clear" aria-label="クリア" id="btnClear"></button>
-      <button class="hit stop"  aria-label="停止" id="btnStop"></button>
-
-      <!-- 第3-6行：数字键（1~9、*0#） -->
-      <button class="hit key" aria-label="1" data-k="1"></button>
-      <button class="hit key" aria-label="2" data-k="2"></button>
-      <button class="hit key" aria-label="3" data-k="3"></button>
-
-      <button class="hit key" aria-label="4" data-k="4"></button>
-      <button class="hit key" aria-label="5" data-k="5"></button>
-      <button class="hit key" aria-label="6" data-k="6"></button>
-
-      <button class="hit key" aria-label="7" data-k="7"></button>
-      <button class="hit key" aria-label="8" data-k="8"></button>
-      <button class="hit key" aria-label="9" data-k="9"></button>
-
-      <button class="hit key" aria-label="*" data-k="*"></button>
-      <button class="hit key" aria-label="0" data-k="0"></button>
-      <button class="hit key" aria-label="#" data-k="#"></button>
-    </div>
+    <!-- 数字键盘 -->
+    <button id="k1" class="hot" data-k="1"></button>
+    <button id="k2" class="hot" data-k="2"></button>
+    <button id="k3" class="hot" data-k="3"></button>
+    <button id="k4" class="hot" data-k="4"></button>
+    <button id="k5" class="hot" data-k="5"></button>
+    <button id="k6" class="hot" data-k="6"></button>
+    <button id="k7" class="hot" data-k="7"></button>
+    <button id="k8" class="hot" data-k="8"></button>
+    <button id="k9" class="hot" data-k="9"></button>
+    <button id="kStar" class="hot" data-k="*"></button>
+    <button id="k0" class="hot" data-k="0"></button>
+    <button id="kHash" class="hot" data-k="#"></button>
   </div>
+
+  <div class="footer">首次点击将解锁音频。音效文件放在 <code>assets/</code> 下即可使用。</div>
+</div>
 
 <script>
 (() => {
-  /* ========== 音效文件（与你仓库 assets 下文件名一致）========== */
-  const ASSET = {
-    openPhone: 'assets/open phone.m4a',
-    ring:      'assets/ring.m4a',
-    enter:     'assets/enter.m4a',
-    key1:      'assets/key1.m4a',
-    key5_2:    'assets/key5_2.m4a',
-    key5_3:    'assets/key5_3.m4a',
-    standBy:   'assets/stand by.m4a',
-    complete:  'assets/complete.m4a',
-    error:     'assets/error.m4a',
-    ready:     'assets/ready.m4a',
-    exceed:    'assets/exceed charge.m4a',
-    release:   'assets/release.m4a',
-    combo3821: 'assets/3821.m4a'
+  /* ========== 音效文件映射（assets 下） ========== */
+  const asset = (name) => `assets/${name}.m4a`;
+  const SND = {
+    openPhone:  'open phone',
+    ringStart:  'ring',
+    enter:      'enter',
+    key:        'key1',
+    key5_2:     'key5_2',
+    key5_3:     'key5_3',
+    standBy:    'stand by',
+    complete:   'complete',
+    release:    'release',
+    error:      'error',
+    ready:      'ready',
+    exceed:     'exceed charge',
+    weaponHit:  'weaponHit'     // 星号键
   };
 
-  /* ========== 低延迟 WebAudio 播放 ========== */
-  let ac=null, masterGain=null; const buffers=new Map();
-  function ensureAC(){
-    if(ac) return ac;
-    const C=window.AudioContext||window.webkitAudioContext; if(!C) return null;
-    ac=new C({latencyHint:'interactive'}); masterGain=ac.createGain();
-    masterGain.gain.value=1.0; masterGain.connect(ac.destination); return ac;
+  /* ========== 简易播放器（<audio>，低接入延迟） ========== */
+  let started=false, ringing=null;
+  function unlock(){
+    if(!started){
+      started=true;
+      play('openPhone');
+    }
   }
-  async function loadBuffer(key){
-    if(buffers.has(key)) return buffers.get(key);
-    const url=ASSET[key]; if(!url) return null;
-    const res=await fetch(url,{cache:'no-store'}); if(!res.ok) return null;
-    const arr=await res.arrayBuffer(); const ctx=ensureAC();
-    const buf=await ctx.decodeAudioData(arr); buffers.set(key,buf); return buf;
+  function play(name, {loop=false, delayMs=0}={}){
+    const file = SND[name];
+    if(!file){ beep(); return null; }
+    const a = new Audio(asset(file));
+    a.preload='auto'; a.loop=!!loop;
+    const start = () => a.play().catch(()=>{});
+    if (delayMs>0) setTimeout(start, delayMs); else start();
+    return a;
   }
-  function playNow(key,{loop=false}={}){
-    const ctx=ensureAC(); if(!ctx) return null;
-    const buf=buffers.get(key); if(!buf) return null;
-    const src=ctx.createBufferSource(); src.buffer=buf; src.loop=!!loop;
-    src.connect(masterGain); src.start(0); return src;
+  function beep(freq=520, ms=120, type='square', vol=0.22){
+    try{
+      const C = window.AudioContext||window.webkitAudioContext; if(!C) return;
+      const ac = new C(); const o=ac.createOscillator(), g=ac.createGain();
+      o.type=type; o.frequency.value=freq; g.gain.value=vol;
+      o.connect(g).connect(ac.destination); o.start();
+      setTimeout(()=>{ try{o.stop();}catch{} }, ms);
+    }catch{}
   }
-  function safeStop(n){ if(n && n.stop){ try{n.stop(0);}catch{} } }
-
-  /* ========== 解锁 + 预加载 + 开机音 ========== */
-  let unlocked=false;
-  async function unlockAndPreload(){
-    if(unlocked) return;
-    const ctx=ensureAC(); try{ if(ctx.state==='suspended') await ctx.resume(); }catch{}
-    unlocked=true;
-    await Promise.all(Object.keys(ASSET).map(k=>loadBuffer(k).catch(()=>null)));
-    playNow('openPhone'); // 开机音
-  }
-  ['pointerdown','touchend','click'].forEach(ev=>{
-    document.addEventListener(ev, ()=>unlockAndPreload(), {once:true, passive:true});
-  });
+  function stopRinging(){ if(ringing){ try{ringing.pause();}catch{} ringing=null; } }
+  function anyKeyInterruptRing(){ stopRinging(); }
 
   /* ========== 规则状态 ========== */
-  const SPECIAL_STAGE=['555','106','103'];
-  let buf='', transformed=false, armedStand=false, transformedReady=false;
-  let ringNode=null, standNode=null;
+  const SPECIAL_STAGE = ['555','106','103']; // 三段按键音组合
+  let buf='', transformed=false, armedStandby=false, armedReady=false;
 
-  function stageFor(b){ for(const c of SPECIAL_STAGE){ if(c.startsWith(b)) return b.length; } return 0; }
-  function maybeInterruptRing(){ if(ringNode){ safeStop(ringNode); ringNode=null; } }
+  function pushKey(k){
+    unlock();
+    anyKeyInterruptRing();
 
-  async function pushDigit(k){
-    await unlockAndPreload();
-    maybeInterruptRing();
+    // 星号：武器打击
+    if(k==='*'){ play('weaponHit'); buf=(buf+k).slice(-4); return; }
 
-    const newBuf=(buf+k).slice(-3);
-    const stg=stageFor(newBuf);
-    if     (stg===1) playNow('key1');
-    else if(stg===2) playNow('key5_2');
-    else if(stg===3) playNow('key5_3');
-    else             playNow('key1');
-
-    buf=newBuf;
-    if(buf==='3821') playNow('combo3821');
+    // 5 的分段音，其它键统一 key
+    if(k==='5'){
+      const fiveCount=(buf.match(/5+$/)?.[0]?.length||0)+1;
+      if(fiveCount===1) play('key');
+      else if(fiveCount===2) play('key5_2');
+      else play('key5_3');
+    }else{
+      play('key');
+    }
+    buf=(buf+k).slice(-4);
   }
 
-  async function onEnter(){
-    await unlockAndPreload();
-    maybeInterruptRing();
+  function onEnter(){
+    unlock();
+    anyKeyInterruptRing();
+
+    const last3 = buf.slice(-3);
+
+    // —— 变身态下的更新规则 —— 
+    // 若缓冲是 106/103：只触发 enter，不走 ready/exceed
+    if(transformed && (last3==='106' || last3==='103')){
+      play('enter');
+      return;
+    }
+
+    // 处于 555->stand by 后：本次完成变身（不播 enter）
+    if(armedStandby){
+      armedStandby=false; play('complete'); transformed=true; armedReady=false; return;
+    }
 
     if(transformed){
-      if(!transformedReady){ playNow('ready'); transformedReady=true; }
-      else { playNow('exceed'); transformedReady=false; }
-      return;
-    }
-    if(armedStand){
-      safeStop(standNode); standNode=null;
-      const src=playNow('complete');
-      const finish=()=>{ transformed=true; transformedReady=false; armedStand=false; document.body.style.background='var(--bg-red)'; buf=''; };
-      if(src) src.onended=finish; else setTimeout(finish,380);
-      return;
-    }
-    playNow('enter');
-
-    if(buf==='555'){
-      safeStop(standNode); standNode=null;
-      standNode=playNow('standBy'); if(standNode) standNode.onended=()=>{ standNode=null; };
-      armedStand=true; return;
+      // 第一次按 ENTER：ready（无 enter 声）
+      if(!armedReady){ play('ready'); armedReady=true; return; }
+      // 第二次按 ENTER：enter + exceed
+      play('enter'); play('exceed', {delayMs:120}); armedReady=false; return;
     }
 
-    if(buf.length===3 && buf!=='106' && buf!=='103' && buf!=='3821'){
-      playNow('error'); buf=''; armedStand=false; transformedReady=false; return;
+    // —— 未变身态 —— 
+    if(last3==='555'){
+      play('enter'); play('standBy'); armedStandby=true; return;
     }
+    if(last3==='106' || last3==='103'){
+      play('enter'); return;
+    }
+
+    // 非 {555,106,103,3821} 的组合：enter 后 error，并重置
+    if(buf.length===3 && last3!=='3821'){
+      play('enter'); play('error', {delayMs:40}); buf=''; armedStandby=false; armedReady=false; return;
+    }
+
+    // 3821 默认只给 enter（如需加独立音效可自行扩展）
+    play('enter');
   }
 
-  async function ringStart(){ await unlockAndPreload(); safeStop(ringNode); ringNode=playNow('ring',{loop:true}); }
-  async function ringStop(){ await unlockAndPreload(); playNow('key1'); safeStop(ringNode); ringNode=null; } // 停止有按键声
-
-  async function onClear(){
-    await unlockAndPreload();
-    maybeInterruptRing();
-    if(!transformed){ playNow('key1'); return; }
-    playNow('key1');
-    const src=playNow('release');
-    const finish=()=>{ transformed=false; armedStand=false; transformedReady=false; document.body.style.background='var(--bg)'; buf=''; };
-    if(src) src.onended=finish; else finish();
+  function onRingStart(){ unlock(); stopRinging(); ringing=play('ringStart', {loop:true}); }
+  function onRingStop(){ unlock(); play('key'); stopRinging(); }
+  function onClear(){
+    unlock(); anyKeyInterruptRing();
+    // クリア：触发 key → release；并退出变身态
+    play('key'); play('release', {delayMs:40});
+    transformed=false; armedStandby=false; armedReady=false; buf='';
   }
 
-  /* 事件绑定 */
-  document.querySelectorAll('.key').forEach(b=>{
-    b.addEventListener('click', ()=>pushDigit(b.dataset.k));
-  });
+  // 绑定
   document.getElementById('btnEnter').addEventListener('click', onEnter);
-  document.getElementById('btnRing').addEventListener('click', ringStart);
-  document.getElementById('btnStop').addEventListener('click', ringStop);
+  document.getElementById('btnRing').addEventListener('click', onRingStart);
+  document.getElementById('btnStop').addEventListener('click', onRingStop);
   document.getElementById('btnClear').addEventListener('click', onClear);
+  ['k1','k2','k3','k4','k5','k6','k7','k8','k9','kStar','k0','kHash'].forEach(id=>{
+    const el=document.getElementById(id); el.addEventListener('click', ()=>pushKey(el.dataset.k));
+  });
+
+  // 首次手势尽快解锁
+  ['pointerdown','touchstart','click','keydown'].forEach(ev=>{
+    window.addEventListener(ev, ()=>{ try{unlock();}catch{} }, {once:true, passive:true});
+  });
 })();
 </script>
 </body>
