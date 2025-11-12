@@ -18,7 +18,7 @@
     gap:24px; padding:24px 0 80px;
   }
 
-  /* 容器不再固定比例，改为由 JS 根据图片真实比例动态设置高度，避免热区错位 */
+  /* 容器高度由图片真实比例动态设置 */
   .phone-wrap{
     position:relative;
     width:min(92vw, 520px);
@@ -26,44 +26,47 @@
     border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.45);
     overflow:hidden; touch-action:manipulation;
   }
-
   .phone-bg{
     position:absolute; inset:0; width:100%; height:100%;
     object-fit:cover; object-position:center; display:block;
   }
-
   .img-missing{
     position:absolute; left:0; right:0; top:0;
     background:#7f1d1d; color:#fff; font-size:12px;
     padding:6px 10px; text-align:center; display:none; z-index:5;
   }
 
-  /* 交互热区：完全透明、无边框、无 outline */
+  /* 热区：透明、无边框、无描边 */
   .hot{
     position:absolute; display:block; border-radius:10px;
-    background:transparent; border:none; outline:none;
+    background:transparent; border:none; outline:none; margin:0; padding:0;
     -webkit-appearance:none; appearance:none;
   }
   .hot:focus, .hot:active{ outline:none; box-shadow:none; border:none; }
 
-  /* —— 键区坐标（百分比），根据你的图来。如果还差一点，只需改这些数值 —— */
-  #btnEnter{ left:26.9%; width:46%;  top:56.6%; height:4.2%; }     /* ENTER */
-  #btnRing { left:21.0%; width:17%;  top:63.7%; height:5.0%; }     /* 铃声 */
-  #btnClear{ left:41.7%; width:17%;  top:63.7%; height:5.0%; }     /* クリア */
-  #btnStop { left:62.3%; width:17%;  top:63.7%; height:5.0%; }     /* 停止 */
+  /* —— 已重新对齐的键位（百分比） —— */
+  /* 功能键区：整体轻微上移 + 宽高细调 */
+  #btnEnter{ left:26.8%; width:46.4%;  top:56.0%; height:4.4%; }   /* ENTER */
+  #btnRing { left:21.0%; width:17.2%;  top:63.1%; height:5.1%; }   /* 铃声 */
+  #btnClear{ left:41.8%; width:17.2%;  top:63.1%; height:5.1%; }   /* クリア */
+  #btnStop { left:62.6%; width:17.2%;  top:63.1%; height:5.1%; }   /* 停止 */
 
-  #k1{ left:26.4%; width:14%; top:69.7%; height:5.0%;}
-  #k2{ left:44.0%; width:14%; top:69.7%; height:5.0%;}
-  #k3{ left:61.6%; width:14%; top:69.7%; height:5.0%;}
-  #k4{ left:26.4%; width:14%; top:76.0%; height:5.0%;}
-  #k5{ left:44.0%; width:14%; top:76.0%; height:5.0%;}
-  #k6{ left:61.6%; width:14%; top:76.0%; height:5.0%;}
-  #k7{ left:26.4%; width:14%; top:82.3%; height:5.0%;}
-  #k8{ left:44.0%; width:14%; top:82.3%; height:5.0%;}
-  #k9{ left:61.6%; width:14%; top:82.3%; height:5.0%;}
-  #kStar{ left:26.4%; width:14%; top:88.6%; height:5.0%;}
-  #k0{    left:44.0%; width:14%; top:88.6%; height:5.0%;}
-  #kHash{ left:61.6%; width:14%; top:88.6%; height:5.0%;}
+  /* 数字键区：每行等距，行距微调以匹配图片 */
+  #k1{ left:26.3%; width:14.2%; top:69.1%; height:5.1%;}
+  #k2{ left:43.9%; width:14.2%; top:69.1%; height:5.1%;}
+  #k3{ left:61.7%; width:14.2%; top:69.1%; height:5.1%;}
+
+  #k4{ left:26.3%; width:14.2%; top:75.5%; height:5.1%;}
+  #k5{ left:43.9%; width:14.2%; top:75.5%; height:5.1%;}
+  #k6{ left:61.7%; width:14.2%; top:75.5%; height:5.1%;}
+
+  #k7{ left:26.3%; width:14.2%; top:81.9%; height:5.1%;}
+  #k8{ left:43.9%; width:14.2%; top:81.9%; height:5.1%;}
+  #k9{ left:61.7%; width:14.2%; top:81.9%; height:5.1%;}
+
+  #kStar{ left:26.3%; width:14.2%; top:88.2%; height:5.1%;}
+  #k0{    left:43.9%; width:14.2%; top:88.2%; height:5.1%;}
+  #kHash{ left:61.7%; width:14.2%; top:88.2%; height:5.1%;}
 </style>
 </head>
 <body>
@@ -100,27 +103,22 @@
 
 <script>
 (() => {
-  /* ===== 背景图（固定 assets/ui.jpg）并按真实比例设置容器高度，避免错位 ===== */
+  /* ===== 背景图（固定 assets/ui.jpg）按真实比例设置容器高度 ===== */
   const UI_FILE = 'assets/ui.jpg';
   const wrap = document.getElementById('wrap');
   const bgImg = document.getElementById('bg');
   const imgMissing = document.getElementById('imgMissing');
-
   function fitWrapToImage(){
-    // 用图片天然宽高计算比例，按当前 wrap 宽度设定高度
     const W = wrap.clientWidth;
-    const r = bgImg.naturalHeight / bgImg.naturalWidth; // 高/宽
-    if (isFinite(r) && r > 0){
-      wrap.style.height = (W * r) + 'px';
-    }
+    const r = bgImg.naturalHeight / bgImg.naturalWidth;
+    if (isFinite(r) && r > 0){ wrap.style.height = (W * r) + 'px'; }
   }
   bgImg.onload = () => { imgMissing.style.display = 'none'; fitWrapToImage(); };
   bgImg.onerror = () => { imgMissing.style.display = 'block'; };
   bgImg.src = UI_FILE;
-  // 窗口尺寸变化时也自适应一次
   window.addEventListener('resize', ()=>{ if(bgImg.complete && bgImg.naturalWidth) fitWrapToImage(); });
 
-  /* ===== 声音名 → 基名（不带后缀），播放器与规则沿用上版（省略注释） ===== */
+  /* ===== 声音名 → 基名（不带后缀） ===== */
   const SND = {
     openPhone:'open phone', ringStart:'ring', enter:'enter',
     key:'key1', key5_2:'key5_2', key5_3:'key5_3',
@@ -129,21 +127,24 @@
     weaponHit:'weaponHit'
   };
 
+  /* ===== 低延迟：优先 WebAudio（缓存解码），失败退回 <audio> ===== */
   let started=false, ringing=null, AC=null;
   const mimeByExt = { m4a:'audio/mp4', mp3:'audio/mpeg', wav:'audio/wav', mp4:'audio/mp4' };
   const extOrder = ['m4a','mp3','wav','mp4'];
-
   function candidates(base){
     const t = document.createElement('audio'); const out=[];
     for(const ext of extOrder){ const mime=mimeByExt[ext]||''; if(!mime || t.canPlayType(mime)!=='') out.push(`assets/${base}.${ext}`); }
     return out;
   }
-
   const waBuf=new Map(), waFail=new Set();
   async function waLoadOnce(name){
     if(waBuf.has(name) || waFail.has(name)) return;
     const base=SND[name]; if(!base){ waFail.add(name); return; }
-    for(const url of candidates(base)){
+    const urls = candidates(base);
+    try{
+      AC = AC || new (window.AudioContext||window.webkitAudioContext)();
+    }catch{}
+    for(const url of urls){
       try{
         const res=await fetch(url,{cache:'force-cache'}); if(!res.ok) continue;
         const arr=await res.arrayBuffer(); const buf=await AC.decodeAudioData(arr);
@@ -153,6 +154,7 @@
     waFail.add(name);
   }
   function waPlay(name, {loop=false, delayMs=0}={}){
+    if(!AC) return null;
     const buf=waBuf.get(name); if(!buf) return null;
     const src=AC.createBufferSource(), g=AC.createGain();
     src.buffer=buf; src.loop=!!loop; src.connect(g).connect(AC.destination);
@@ -172,10 +174,10 @@
   function beep(freq=520, ms=90, type='square', vol=0.22){
     try{
       const C=window.AudioContext||window.webkitAudioContext; if(!C) return;
-      const ac=AC||new C(); AC=ac;
-      const o=ac.createOscillator(), g=ac.createGain();
+      AC = AC || new C();
+      const o=AC.createOscillator(), g=AC.createGain();
       o.type=type; o.frequency.value=freq; g.gain.value=vol;
-      o.connect(g).connect(ac.destination); o.start(); setTimeout(()=>{ try{o.stop();}catch{} }, ms);
+      o.connect(g).connect(AC.destination); o.start(); setTimeout(()=>{ try{o.stop();}catch{} }, ms);
     }catch{}
   }
   function play(name, opts={}){
@@ -197,9 +199,8 @@
     play('openPhone');
   }
 
-  /* ===== 规则 ===== */
+  /* ===== 规则（与你当前一致） ===== */
   let buf='', transformed=false, armedStandby=false, armedReady=false;
-
   function pushKey(k){
     unlock(); anyKeyInterruptRing();
     if(k==='*'){ play('weaponHit'); buf=(buf+k).slice(-4); return; }
@@ -209,29 +210,23 @@
     }else{ play('key'); }
     buf=(buf+k).slice(-4);
   }
-
   function onEnter(){
     unlock(); anyKeyInterruptRing();
     const last3=buf.slice(-3);
-
     if(transformed && (last3==='106'||last3==='103')){ play('enter'); return; }
     if(armedStandby){ armedStandby=false; play('complete'); transformed=true; armedReady=false; return; }
-
     if(transformed){
       if(!armedReady){ play('ready'); armedReady=true; return; }
       play('enter'); play('exceed',{delayMs:120}); armedReady=false; return;
     }
-
     if(last3==='555'){ play('enter'); play('standBy'); armedStandby=true; return; }
     if(last3==='106'||last3==='103'){ play('enter'); return; }
-
     if(buf.length===3 && last3!=='3821'){
       play('enter'); play('error',{delayMs:40});
       buf=''; armedStandby=false; armedReady=false; return;
     }
     play('enter');
   }
-
   function onRingStart(){ unlock(); stopRinging(); ringing=play('ringStart',{loop:true}); }
   function onRingStop(){ unlock(); play('key'); stopRinging(); }
   function onClear(){
@@ -240,14 +235,15 @@
     transformed=false; armedStandby=false; armedReady=false; buf='';
   }
 
-  // 绑定（pointerdown 规避点击延迟）
+  // 绑定（pointerdown 避免点击延迟）
   const bind=(el,fn)=>{ el.addEventListener('pointerdown',e=>{ e.preventDefault(); fn(); }, {passive:false}); };
   bind(document.getElementById('btnEnter'), onEnter);
   bind(document.getElementById('btnRing'),  onRingStart);
   bind(document.getElementById('btnStop'),  onRingStop);
   bind(document.getElementById('btnClear'), onClear);
   ['k1','k2','k3','k4','k5','k6','k7','k8','k9','kStar','k0','kHash'].forEach(id=>{
-    bind(document.getElementById(id), ()=>pushKey(document.getElementById(id).dataset.k));
+    const el = document.getElementById(id);
+    bind(el, ()=>pushKey(el.dataset.k));
   });
 
   // 首次手势 → 解锁音频并预热
