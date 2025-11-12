@@ -15,9 +15,25 @@
     position:relative;
     width:min(92vw, 520px);
     aspect-ratio: 708 / 1536;               /* 按你的图比例 */
-    background:#000 url('assets/phone-ui.jpg') center/cover no-repeat;
+    background:#000;                         /* 加载前先用纯黑底 */
     border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.45);
     overflow:hidden; touch-action:manipulation;
+  }
+
+  /* 背景图：用 <img> 方便侦测加载失败 */
+  .phone-bg{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    object-fit:cover; object-position:center;
+    display:block;
+  }
+
+  /* 图片加载失败的红色提示条（只在加载失败时显示） */
+  .img-missing{
+    position:absolute; left:0; right:0; top:0;
+    background:#7f1d1d; color:#fff; font-size:12px;
+    padding:6px 10px; text-align:center;
+    display:none; z-index:5;
   }
 
   .hot{
@@ -44,14 +60,18 @@
   #kStar{ left:26.4%; width:14%; top:88.6%; height:5.0%;}
   #k0{    left:44.0%; width:14%; top:88.6%; height:5.0%;}
   #kHash{ left:61.6%; width:14%; top:88.6%; height:5.0%;}
-
-  .footer{ width:min(92vw,520px); color:#9aa4b2; font-size:13px; line-height:1.6; padding:8px 2px 0; }
 </style>
 </head>
 <body>
 <div class="page">
 
   <div class="phone-wrap" id="wrap">
+    <!-- 图片加载失败会显示上面的红色提示条 -->
+    <div class="img-missing" id="imgMissing">
+      背景图未加载。请确认 <code>assets/ui.jpg</code> 是否存在（区分大小写/后缀）。
+    </div>
+    <img id="bg" class="phone-bg" alt="UI" />
+
     <!-- 功能键 -->
     <button id="btnEnter" class="hot" aria-label="ENTER"></button>
     <button id="btnRing"  class="hot" aria-label="铃声"></button>
@@ -73,13 +93,18 @@
     <button id="kHash" class="hot" data-k="#"></button>
   </div>
 
-  <div class="footer">
-    首次点击将解锁音频。把音效放在 <code>assets/</code> 下即可：支持 <code>.m4a</code>、<code>.mp3</code>、<code>.wav</code>、<code>.mp4</code>（同名任选其一或都放；会自动择优/回退）。
-  </div>
 </div>
 
 <script>
 (() => {
+  /* ======= 背景图路径（已改为 assets/ui.jpg） ======= */
+  const UI_FILE = 'assets/ui.jpg';
+  const bgImg = document.getElementById('bg');
+  const imgMissing = document.getElementById('imgMissing');
+  bgImg.onload = () => { imgMissing.style.display = 'none'; };
+  bgImg.onerror = () => { imgMissing.style.display = 'block'; };
+  bgImg.src = UI_FILE;
+
   /* ========== 声音名 → “文件基名”（不带后缀） ========== */
   const SND = {
     openPhone:  'open phone',
@@ -100,24 +125,15 @@
   /* ========== 播放器：m4a → mp3 → wav → mp4（按支持度筛选 + 自动回退） ========== */
   let started=false, ringing=null;
 
-  const mimeByExt = {
-    m4a: 'audio/mp4',    // AAC in MP4 container
-    mp3: 'audio/mpeg',
-    wav: 'audio/wav',
-    mp4: 'audio/mp4'
-  };
-  const extOrder = ['m4a','mp3','wav','mp4'];  // 优先顺序（iOS优先AAC/MP3）
+  const mimeByExt = { m4a:'audio/mp4', mp3:'audio/mpeg', wav:'audio/wav', mp4:'audio/mp4' };
+  const extOrder = ['m4a','mp3','wav','mp4'];
 
   function buildCandidates(base){
-    // 生成候选 URL，并按 canPlayType 过滤不支持的容器
     const testAudio = document.createElement('audio');
     const list = [];
     for(const ext of extOrder){
       const mime = mimeByExt[ext] || '';
-      if (!mime || testAudio.canPlayType(mime) !== '') {
-        // 空字符串=未知也允许尝试；'maybe'/'probably' 优先，但我们全部保留，后续 onerror 回退
-        list.push(`assets/${base}.${ext}`);
-      }
+      if (!mime || testAudio.canPlayType(mime) !== '') list.push(`assets/${base}.${ext}`);
     }
     return list;
   }
@@ -125,7 +141,6 @@
   function play(name, {loop=false, delayMs=0}={}){
     const base = SND[name];
     if(!base){ beep(); return null; }
-
     const urls = buildCandidates(base);
     if (urls.length===0){ beep(); return null; }
 
@@ -137,7 +152,7 @@
       if(i >= urls.length){ beep(); return; }
       a.onerror = () => tryUrl(i+1);
       a.src = urls[i];
-      const start = () => a.play().catch(()=>{ /* 等用户交互解锁后重试 */ });
+      const start = () => a.play().catch(()=>{});
       if(delayMs>0) setTimeout(start, delayMs); else start();
     };
     tryUrl(0);
@@ -155,11 +170,10 @@
   }
   function stopRinging(){ if(ringing){ try{ringing.pause();}catch{} ringing=null; } }
   function anyKeyInterruptRing(){ stopRinging(); }
-
   function unlock(){ if(!started){ started=true; play('openPhone'); } }
 
-  /* ========== 规则状态（与你之前一致 + 最近更新） ========== */
-  const SPECIAL_STAGE = ['555','106','103']; // 三段按键音组合
+  /* ========== 规则状态（含你之前的全部更新） ========== */
+  const SPECIAL_STAGE = ['555','106','103'];
   let buf='', transformed=false, armedStandby=false, armedReady=false;
 
   function pushKey(k){
@@ -189,8 +203,7 @@
 
     // 变身态 + 106/103：只触发 enter
     if(transformed && (last3==='106' || last3==='103')){
-      play('enter');
-      return;
+      play('enter'); return;
     }
 
     // 555 -> stand by 流程：本次完成（不播 enter）
@@ -241,7 +254,7 @@
     const el=document.getElementById(id); el.addEventListener('click', ()=>pushKey(el.dataset.k));
   });
 
-  // 首次手势尽快“解锁”音频
+  // 首次手势尽快解锁
   ['pointerdown','touchstart','click','keydown'].forEach(ev=>{
     window.addEventListener(ev, ()=>{ try{unlock();}catch{} }, {once:true, passive:true});
   });
