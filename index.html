@@ -7,12 +7,26 @@
 <title>FAIZ Phone</title>
 <style>
   :root{
+    /* 背景图：请确保在 assets/ui.jpg */
     --ui: url('assets/ui.jpg');
-    /* 这四个变量可在不改代码的情况下微调覆盖层 */
-    --frame-top: 47.5%;
-    --frame-bottom: 6.5%;
-    --frame-left: 16%;
-    --frame-right: 16%;
+
+    /* 图像原始尺寸：708x1536（用于把像素换算为百分比） */
+    --W: 708;
+    --H: 1536;
+
+    /* 位置尺寸（像素，来自你的标注） */
+    --enter-w: 280;  /* px */
+    --enter-h: 90;
+    --key-w:   159;
+    --key-h:   118;
+    --col-gap: 40;   /* 列间距 */
+    --row-gap: 33;   /* 小键行间距 */
+    --enter-top: 307;/* ENTER 顶部距离整图顶部 */
+    --between-enter-and-row2: 69; /* ENTER 与第二行（铃声/清空/停止）之间的垂直间距 */
+    --left-margin: 69;   /* 第一列左边距 */
+    --bottom-safe: 364;  /* 仅校验用，不参与布局 */
+
+    /* 颜色 */
     --bg:#0b0f19; --bg-red:#7f1d1d; --fg:#fff;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -24,59 +38,107 @@
     touch-action:manipulation; user-select:none; -webkit-user-select:none;
     display:flex; align-items:center; justify-content:center;
   }
+
+  /* 背景图容器：保持 708x1536 比例 */
   .phone{
     width:min(94vw,520px);
     aspect-ratio: 708 / 1536;
     background: var(--ui) center/contain no-repeat;
     position:relative;
+    overflow: hidden; /* 防止按钮溢出 */
   }
-  .frame{
-    position:absolute;
-    left:var(--frame-left);
-    right:var(--frame-right);
-    top:var(--frame-top);
-    bottom:var(--frame-bottom);
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    grid-auto-rows:1fr;
-    gap:0.9vh;
+
+  /* 把像素换算为容器内百分比的工具类 */
+  :root{
+    /* 百分比 = px / 对应边 */
+    --enter-w-p: calc(var(--enter-w) / var(--W) * 100%);
+    --enter-h-p: calc(var(--enter-h) / var(--H) * 100%);
+    --key-w-p:   calc(var(--key-w)   / var(--W) * 100%);
+    --key-h-p:   calc(var(--key-h)   / var(--H) * 100%);
+    --gap-x-p:   calc(var(--col-gap) / var(--W) * 100%);
+    --gap-y-p:   calc(var(--row-gap) / var(--H) * 100%);
+    --enter-top-p: calc(var(--enter-top) / var(--H) * 100%);
+    --row2-top-p:  calc((var(--enter-top) + var(--enter-h) + var(--between-enter-and-row2)) / var(--H) * 100%);
+    --row3-top-p:  calc((var(--enter-top) + var(--enter-h) + var(--between-enter-and-row2) + var(--key-h) + var(--row-gap)) / var(--H) * 100%);
+    --row4-top-p:  calc((var(--enter-top) + var(--enter-h) + var(--between-enter-and-row2) + (var(--key-h) + var(--row-gap))*2) / var(--H) * 100%);
+    --row5-top-p:  calc((var(--enter-top) + var(--enter-h) + var(--between-enter-and-row2) + (var(--key-h) + var(--row-gap))*3) / var(--H) * 100%);
+    --row6-top-p:  calc((var(--enter-top) + var(--enter-h) + var(--between-enter-and-row2) + (var(--key-h) + var(--row-gap))*4) / var(--H) * 100%);
+    --left-p:      calc(var(--left-margin) / var(--W) * 100%);
+    --col2-left-p: calc((var(--left-margin) + var(--key-w) + var(--col-gap)) / var(--W) * 100%);
+    --col3-left-p: calc((var(--left-margin) + (var(--key-w) + var(--col-gap))*2) / var(--W) * 100%);
+    --enter-left-p: calc((var(--W) - var(--enter-w)) / 2 / var(--W) * 100%); /* 居中 */
   }
+
+  /* 按钮公共样式（透明热区） */
   .hit{
+    position:absolute;
     background:transparent; border:none; outline:none;
     touch-action:manipulation; -webkit-user-select:none; user-select:none;
   }
   .hit:active{ transform:scale(.98); }
-  .enter{ grid-column:1 / 4; }
+
+  /* ENTER */
+  #btnEnter{
+    left: var(--enter-left-p);
+    top:  var(--enter-top-p);
+    width:  var(--enter-w-p);
+    height: var(--enter-h-p);
+  }
+
+  /* 第二行：铃声 / クリア / 停止 —— 大小与普通键一致 */
+  #btnRing{  left:var(--left-p);       top:var(--row2-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  #btnClear{ left:var(--col2-left-p);  top:var(--row2-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  #btnStop{  left:var(--col3-left-p);  top:var(--row2-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+
+  /* 第3~6行：1~9、*0# */
+  /* 行3 */
+  .r3c1{ left:var(--left-p);      top:var(--row3-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  .r3c2{ left:var(--col2-left-p); top:var(--row3-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  .r3c3{ left:var(--col3-left-p); top:var(--row3-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  /* 行4 */
+  .r4c1{ left:var(--left-p);      top:var(--row4-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  .r4c2{ left:var(--col2-left-p); top:var(--row4-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  .r4c3{ left:var(--col3-left-p); top:var(--row4-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  /* 行5 */
+  .r5c1{ left:var(--left-p);      top:var(--row5-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  .r5c2{ left:var(--col2-left-p); top:var(--row5-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  .r5c3{ left:var(--col3-left-p); top:var(--row5-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  /* 行6 */
+  .r6c1{ left:var(--left-p);      top:var(--row6-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  .r6c2{ left:var(--col2-left-p); top:var(--row6-top-p); width:var(--key-w-p); height:var(--key-h-p); }
+  .r6c3{ left:var(--col3-left-p); top:var(--row6-top-p); width:var(--key-w-p); height:var(--key-h-p); }
 </style>
 </head>
 <body>
   <div class="phone" id="phone">
-    <div class="frame" id="frame">
-      <!-- 第1行：ENTER -->
-      <button class="hit enter" aria-label="ENTER" id="btnEnter"></button>
-      <!-- 第2行：铃声 / クリア / 停止 -->
-      <button class="hit ring"  aria-label="铃声" id="btnRing"></button>
-      <button class="hit clear" aria-label="クリア" id="btnClear"></button>
-      <button class="hit stop"  aria-label="停止" id="btnStop"></button>
-      <!-- 第3-6行：1~9、*0# -->
-      <button class="hit key" aria-label="1" data-k="1"></button>
-      <button class="hit key" aria-label="2" data-k="2"></button>
-      <button class="hit key" aria-label="3" data-k="3"></button>
-      <button class="hit key" aria-label="4" data-k="4"></button>
-      <button class="hit key" aria-label="5" data-k="5"></button>
-      <button class="hit key" aria-label="6" data-k="6"></button>
-      <button class="hit key" aria-label="7" data-k="7"></button>
-      <button class="hit key" aria-label="8" data-k="8"></button>
-      <button class="hit key" aria-label="9" data-k="9"></button>
-      <button class="hit key" aria-label="*" data-k="*"></button>
-      <button class="hit key" aria-label="0" data-k="0"></button>
-      <button class="hit key" aria-label="#" data-k="#"></button>
-    </div>
+    <!-- 按钮（透明热区），绝对定位到具体像素换算的位置 -->
+    <button class="hit" id="btnEnter" aria-label="ENTER"></button>
+
+    <button class="hit" id="btnRing"  aria-label="铃声"></button>
+    <button class="hit" id="btnClear" aria-label="クリア"></button>
+    <button class="hit" id="btnStop"  aria-label="停止"></button>
+
+    <!-- 第3行：1 2 3 -->
+    <button class="hit r3c1" aria-label="1" data-k="1"></button>
+    <button class="hit r3c2" aria-label="2" data-k="2"></button>
+    <button class="hit r3c3" aria-label="3" data-k="3"></button>
+    <!-- 第4行：4 5 6 -->
+    <button class="hit r4c1" aria-label="4" data-k="4"></button>
+    <button class="hit r4c2" aria-label="5" data-k="5"></button>
+    <button class="hit r4c3" aria-label="6" data-k="6"></button>
+    <!-- 第5行：7 8 9 -->
+    <button class="hit r5c1" aria-label="7" data-k="7"></button>
+    <button class="hit r5c2" aria-label="8" data-k="8"></button>
+    <button class="hit r5c3" aria-label="9" data-k="9"></button>
+    <!-- 第6行：* 0 # -->
+    <button class="hit r6c1" aria-label="*" data-k="*"></button>
+    <button class="hit r6c2" aria-label="0" data-k="0"></button>
+    <button class="hit r6c3" aria-label="#" data-k="#"></button>
   </div>
 
 <script>
 (() => {
-  /*********** 资源路径 ***********/
+  /* 音频资源：保持与你仓库的文件名一致 */
   const ASSET = {
     openPhone: 'assets/open phone.m4a',
     ring:      'assets/ring.m4a',
@@ -91,10 +153,10 @@
     exceed:    'assets/exceed charge.m4a',
     release:   'assets/release.m4a',
     combo3821: 'assets/3821.m4a',
-    weaponHit: 'assets/weaponHit.m4a'   // ★ 确保你有这个文件
+    weaponHit: 'assets/weaponHit.m4a' // ★ 变身后 * 使用
   };
 
-  /*********** 低延迟播放（Web Audio） ***********/
+  /* 低延迟播放（Web Audio） */
   let ac=null, masterGain=null;
   const buffers = new Map();
   function ensureAC(){
@@ -123,7 +185,7 @@
   }
   function safeStop(n){ if(n && n.stop){ try{ n.stop(0); }catch{} } }
 
-  /*********** 手势解锁 + 预加载 + 开机音 ***********/
+  /* 首次触摸解锁 + 预加载 + 开机音 */
   let unlocked=false;
   async function unlockAndPreload(){
     if (unlocked) return;
@@ -131,34 +193,31 @@
     try{ if (ctx.state==='suspended') await ctx.resume(); }catch{}
     unlocked = true;
     await Promise.all(Object.keys(ASSET).map(k=>loadBuffer(k).catch(()=>null)));
-    playNow('openPhone'); // 开机音
+    playNow('openPhone');
   }
   ['pointerdown','touchend','click'].forEach(ev=>{
     document.addEventListener(ev, ()=>unlockAndPreload(), {once:true, passive:true});
   });
 
-  /*********** 规则状态 ***********/
-  const SPECIAL_STAGE = ['555','106','103']; // 三段按键音
+  /* 规则状态 */
+  const SPECIAL_STAGE = ['555','106','103'];
   let buf='', transformed=false, armedStand=false, transformedReady=false;
   let ringNode=null, standNode=null;
 
   function stageFor(b){ for(const c of SPECIAL_STAGE){ if(c.startsWith(b)) return b.length; } return 0; }
   function maybeInterruptRing(){ if (ringNode){ safeStop(ringNode); ringNode=null; } }
 
-  /*********** 数字/符号键 ***********/
   async function pushDigit(k){
     await unlockAndPreload();
     maybeInterruptRing();
 
-    // ★ 变身前：* 用 key 音效；变身后：* 用 weaponHit 音效
+    /* ★ 变身后 * 播放 weaponHit；未变身 * 播放 key1 */
     if (k === '*') {
-      if (transformed) playNow('weaponHit');
-      else playNow('key1');
+      if (transformed) playNow('weaponHit'); else playNow('key1');
       buf = (buf + k).slice(-3);
       return;
     }
 
-    // 其它键：根据 555/106/103 的阶段决定 key/key5_2/key5_3
     const newBuf = (buf + k).slice(-3);
     const stg = stageFor(newBuf);
     if      (stg===1) playNow('key1');
@@ -168,22 +227,19 @@
 
     buf = newBuf;
 
-    if (buf==='3821') playNow('combo3821'); // 3821 独立音效（如不需要可删）
+    if (buf==='3821') playNow('combo3821');
   }
 
-  /*********** ENTER ***********/
   async function onEnter(){
     await unlockAndPreload();
     maybeInterruptRing();
 
-    // 变身态：第一次 ENTER -> ready；第二次 -> enter + exceed（无例外）
     if (transformed){
       if (!transformedReady){ playNow('ready'); transformedReady=true; }
       else { playNow('enter'); playNow('exceed'); transformedReady=false; }
       return;
     }
 
-    // 未变身 + 已武装（stand by 已播）→ 完成
     if (armedStand){
       safeStop(standNode); standNode=null;
       const src = playNow('complete');
@@ -192,10 +248,8 @@
       return;
     }
 
-    // 普通情况：先播 enter
     playNow('enter');
 
-    // 555 → stand by，等待下一次 ENTER 完成
     if (buf==='555'){
       safeStop(standNode); standNode=null;
       standNode = playNow('standBy');
@@ -203,16 +257,13 @@
       armedStand = true; return;
     }
 
-    // 未变身 & 完整三位组合 & 不在 {555,106,103,3821} → error 并重置
     if (buf.length===3 && buf!=='106' && buf!=='103' && buf!=='3821'){
       playNow('error');
       buf=''; armedStand=false; transformedReady=false;
       return;
     }
-    // 106/103/3821：只播 enter（规则已满足）
   }
 
-  /*********** 其它功能键 ***********/
   async function ringStart(){ await unlockAndPreload(); safeStop(ringNode); ringNode = playNow('ring', {loop:true}); }
   function ringStop(){ safeStop(ringNode); ringNode=null; }
   async function onClear(){
@@ -225,8 +276,8 @@
     if (src) src.onended=finish; else finish();
   }
 
-  /*********** 绑定 ***********/
-  document.querySelectorAll('.key').forEach(b=>{
+  /* 绑定事件 */
+  document.querySelectorAll('[data-k]').forEach(b=>{
     b.addEventListener('click', ()=>pushDigit(b.dataset.k));
   });
   document.getElementById('btnEnter').addEventListener('click', onEnter);
@@ -234,7 +285,7 @@
   document.getElementById('btnStop').addEventListener('click', ringStop);
   document.getElementById('btnClear').addEventListener('click', onClear);
 
-  // 禁止 iOS 捏合缩放
+  /* 禁止 iOS 捏合缩放 */
   ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
     document.addEventListener(ev, e=>{ e.preventDefault(); }, {passive:false});
   });
