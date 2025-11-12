@@ -4,12 +4,12 @@
 <meta charset="UTF-8" />
 <meta name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<title>FAIZ Phone</title>
+<title>FAIZ Phone (调试描边)</title>
 <style>
   :root{
     --ui: url('assets/ui.jpg');
 
-    /* 只需微调这几项（百分比，基于 708×1536 参考图） */
+    /* 这些是位置百分比（按你那张 708x1536 的版心推的），不对就告诉我往哪偏 */
     --enter-left: 20.5%;
     --enter-top:  59.6%;
     --enter-w:    39.55%;
@@ -18,10 +18,10 @@
     --row2-left:  23.5%;
     --row2-top:   65.1%;
 
-    --gap-x: 5.65%;   /* ≈ 40px */
-    --gap-y: 2.15%;   /* ≈ 33px */
-    --key-w: 22.45%;  /* ≈ 159px */
-    --key-h: 7.68%;   /* ≈ 118px */
+    --gap-x: 5.65%;
+    --gap-y: 2.15%;
+    --key-w: 22.45%;
+    --key-h: 7.68%;
 
     --bg:#000; --fg:#fff;
   }
@@ -40,8 +40,16 @@
     transform-origin:center;
   }
   .hit:active{ transform:scale(.98); }
-  /* 校准请临时取消注释： */
-  /* .hit{ background:rgba(255,0,0,.25); border-radius:6px; } */
+
+  /* ====== 调试描边：完美对齐后把下面两行注释掉即可 ====== */
+  .hit{ background:rgba(255,0,0,.22); border:1.5px dashed #00ffff; border-radius:8px; }
+  .hit::after{
+    content: attr(aria-label);
+    position:absolute; left:4px; top:2px; font: 600 10px/1 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    color:#00ffff; text-shadow:0 0 3px #000;
+    pointer-events:none;
+  }
+  /* ==================================================== */
 </style>
 </head>
 <body>
@@ -78,7 +86,7 @@
 
 <script>
 (() => {
-  /* ---------- 资源名（不写扩展名），会按 .m4a → .mp3 → .wav → .mp4 依次探测 ---------- */
+  /* ---------- 资源名（不写扩展名），自动探测 .m4a → .mp3 → .wav → .mp4 ---------- */
   const BASE = {
     openPhone: 'assets/open phone',
     ring:      'assets/ring',
@@ -93,15 +101,14 @@
     exceed:    'assets/exceed charge',
     release:   'assets/release',
     combo3821: 'assets/3821',
-    weaponHit: 'assets/weaponHit' // 变身后 * 号
+    weaponHit: 'assets/weaponHit'
   };
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
-  const urlMap = {}; // 真实可用的 url
+  const urlMap = {};
 
-  /* ---------- WebAudio 播放 ---------- */
+  /* ---------- WebAudio ---------- */
   let ac=null, master=null;
   const buffers=new Map();
-
   function ctx(){ if(ac) return ac; const C=window.AudioContext||window.webkitAudioContext; ac=new C({latencyHint:'interactive'}); master=ac.createGain(); master.gain.value=1; master.connect(ac.destination); return ac; }
 
   async function resolveUrl(base){
@@ -112,30 +119,22 @@
     }
     return null;
   }
-
   async function load(key){
     if(buffers.has(key)) return buffers.get(key);
-    const base = BASE[key]; if(!base) return null;
+    const base=BASE[key]; if(!base) return null;
     const url = await resolveUrl(base); if(!url) return null;
     const res = await fetch(url,{cache:'no-store'}); if(!res.ok) return null;
     const arr = await res.arrayBuffer();
     const b = await ctx().decodeAudioData(arr);
     buffers.set(key,b); return b;
   }
-
-  function play(key,{loop=false}={}){
-    const b = buffers.get(key); if(!b) return null;
-    const s = ctx().createBufferSource();
-    s.buffer=b; s.loop=!!loop; s.connect(master); s.start();
-    return s;
-  }
+  function play(key,{loop=false}={}){ const b=buffers.get(key); if(!b) return null; const s=ctx().createBufferSource(); s.buffer=b; s.loop=!!loop; s.connect(master); s.start(); return s; }
   function stop(n){ if(n&&n.stop){ try{n.stop();}catch{} } }
 
-  /* ---------- 逻辑状态 ---------- */
+  /* ---------- 状态/规则 ---------- */
   const COMBOS=['555','106','103'];
   let buf='', transformed=false, armed=false, readyOnce=false;
   let ringNode=null, standNode=null;
-
   function stageOf(s){ for(const c of COMBOS){ if(c.startsWith(s)) return s.length; } return 0; }
   function interruptRing(){ if(ringNode){ stop(ringNode); ringNode=null; } }
 
@@ -155,7 +154,6 @@
     buf=s;
     if(buf==='3821') play('combo3821');
   }
-
   function onEnter(){
     interruptRing();
     if(transformed){
@@ -174,19 +172,10 @@
     if(buf==='106'||buf==='103'){ return; }
     if(buf.length===3 && buf!=='3821'){ play('error'); buf=''; armed=false; readyOnce=false; }
   }
-
-  function onStar(){
-    interruptRing();
-    if(transformed) play('weaponHit'); else play('key1');
-    buf=(buf+'*').slice(-3);
-  }
+  function onStar(){ interruptRing(); if(transformed) play('weaponHit'); else play('key1'); buf=(buf+'*').slice(-3); }
   function ringStart(){ interruptRing(); ringNode=play('ring',{loop:true}); }
   function ringStop(){ interruptRing(); }
-  function onClear(){
-    interruptRing();
-    if(!transformed){ play('key1'); buf=''; return; }
-    play('key1'); const s=play('release'); const done=()=>{ transformed=false; armed=false; readyOnce=false; buf=''; }; if(s) s.onended=done; else done();
-  }
+  function onClear(){ interruptRing(); if(!transformed){ play('key1'); buf=''; return; } play('key1'); const s=play('release'); const done=()=>{ transformed=false; armed=false; readyOnce=false; buf=''; }; if(s) s.onended=done; else done(); }
 
   /* ---------- 绑定 ---------- */
   document.querySelectorAll('.hit[data-k]').forEach(b=>{
@@ -199,7 +188,7 @@
   document.getElementById('btnStop').addEventListener('click', ringStop);
   document.getElementById('btnClear').addEventListener('click', onClear);
 
-  /* ---------- 按钮定位（用百分比，修复“无交互”） ---------- */
+  /* ---------- 位置：百分比定位（方便你截图标注偏差） ---------- */
   function place(){
     const css = getComputedStyle(document.documentElement);
     const enter = document.getElementById('btnEnter');
@@ -237,10 +226,6 @@
   }
   window.addEventListener('load', place);
   window.addEventListener('resize', place);
-
-  ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
-    document.addEventListener(ev, e=>e.preventDefault(), {passive:false});
-  });
 })();
 </script>
 </body>
