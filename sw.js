@@ -1,4 +1,4 @@
-const CACHE_NAME = "faiz-pwa-v9";
+const CACHE_NAME = "faiz-pwa-v10";
 
 const APP_SHELL = [
   "./",

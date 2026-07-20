@@ -261,6 +261,8 @@
   let transformed=false;
   let armed=false;
   let standByPlaying=false;
+  let standByEndAt=0;
+  let standByTimer=null;
   let readyArmed=false;
   let ringNode=null;
   let standNode=null;
@@ -288,6 +290,35 @@
       stop(ringNode);
       ringNode=null;
     }
+  }
+
+
+  function finishStandBy(){
+    if(standByTimer){
+      clearTimeout(standByTimer);
+      standByTimer=null;
+    }
+
+    standNode=null;
+    standByEndAt=0;
+    standByPlaying=false;
+    armed=true;
+  }
+
+  function resetStandBy(){
+    if(standByTimer){
+      clearTimeout(standByTimer);
+      standByTimer=null;
+    }
+
+    if(standNode){
+      stop(standNode);
+      standNode=null;
+    }
+
+    standByEndAt=0;
+    standByPlaying=false;
+    armed=false;
   }
 
   async function ensureReady(){
@@ -391,9 +422,18 @@
       return;
     }
 
-    /* stand by 尚未播放结束时，ENTER 不响应 */
+    /*
+     * stand by 播放期间，ENTER 不响应。
+     * 若 iOS 的 onended 回调延迟，但实际时长已到，则立即解除锁定。
+     */
     if(standByPlaying){
-      return;
+      const currentTime=ctx().currentTime;
+
+      if(standByEndAt>0 && currentTime>=standByEndAt-0.03){
+        finishStandBy();
+      }else{
+        return;
+      }
     }
 
     /*
@@ -408,8 +448,7 @@
       const done=()=>{
         transformed=true;
         readyArmed=false;
-        armed=false;
-        standByPlaying=false;
+        resetStandBy();
         buf='';
       };
 
@@ -422,22 +461,30 @@
     play('enter');
 
     if(buf==='555'){
-      stop(standNode);
+      resetStandBy();
 
-      armed=false;
       standByPlaying=true;
       standNode=play('standBy');
 
-      const standbyDone=()=>{
-        standNode=null;
-        standByPlaying=false;
-        armed=true;
-      };
+      const standByBuffer=buffers.get('standBy');
 
-      if(standNode){
-        standNode.onended=standbyDone;
+      if(standNode && standByBuffer){
+        const duration=Math.max(0, standByBuffer.duration);
+
+        standByEndAt=ctx().currentTime+duration;
+        standNode.onended=finishStandBy;
+
+        /*
+         * iOS/PWA 兜底：
+         * 即使 onended 延迟或未及时回调，
+         * 音频时长结束后也会解除 ENTER 锁定。
+         */
+        standByTimer=setTimeout(
+          finishStandBy,
+          Math.ceil((duration+0.08)*1000)
+        );
       }else{
-        standbyDone();
+        finishStandBy();
       }
 
       return;
@@ -450,8 +497,7 @@
     if(buf.length===3 && buf!=='3821'){
       play('error');
       buf='';
-      armed=false;
-      standByPlaying=false;
+      resetStandBy();
       readyArmed=false;
     }
   }
@@ -496,8 +542,7 @@
 
     const done=()=>{
       transformed=false;
-      armed=false;
-      standByPlaying=false;
+      resetStandBy();
       readyArmed=false;
       buf='';
     };
