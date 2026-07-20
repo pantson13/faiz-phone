@@ -312,6 +312,7 @@
     }
 
     if(standNode){
+      standNode.onended=null;
       stop(standNode);
       standNode=null;
     }
@@ -423,25 +424,20 @@
     }
 
     /*
-     * stand by 播放期间，ENTER 不响应。
-     * 若 iOS 的 onended 回调延迟，但实际时长已到，则立即解除锁定。
+     * stand by 播放期间或播放结束后：
+     * 按 ENTER 都立即进入 complete。
+     *
+     * 播放期间按下：
+     * - 立即停止 stand by
+     * - 不播放 enter
+     * - 只播放 complete
+     *
+     * 播放结束后按下：
+     * - 不播放 enter
+     * - 只播放 complete
      */
-    if(standByPlaying){
-      const currentTime=ctx().currentTime;
-
-      if(standByEndAt>0 && currentTime>=standByEndAt-0.03){
-        finishStandBy();
-      }else{
-        return;
-      }
-    }
-
-    /*
-     * stand by 播放结束后：
-     * ENTER 不播放 enter 按钮音效，只播放 complete。
-     */
-    if(armed){
-      standNode=null;
+    if(standByPlaying || armed){
+      resetStandBy();
 
       const s=play('complete');
 
