@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="FAIZ" />
 <link rel="manifest" href="./manifest.webmanifest" />
-<link rel="apple-touch-icon" href="./assets/icons/icon-180.png" />
+<link rel="apple-touch-icon" href="./icons/icon-192.png" />
 <title>FAIZ Phone (调尺寸版)</title>
 <style>
   :root{
@@ -29,6 +29,40 @@
     --gap-x:      4%;  /* 列间距 */
     --gap-y:      1.3%;  /* 行间距 */
 
+
+    /* ===== FAIZ 顶部两个圆形按钮 ===== */
+    --btn-top1-left: 6%;
+    --btn-top1-top:  4%;
+    --btn-top1-w:    18%;
+    --btn-top1-h:    9%;
+
+    --btn-top2-left: 29%;
+    --btn-top2-top:  4%;
+    --btn-top2-w:    18%;
+    --btn-top2-h:    9%;
+
+    --btn-top3-left: 52%;
+    --btn-top3-top:  4%;
+    --btn-top3-w:    18%;
+    --btn-top3-h:    9%;
+
+    --btn-top4-left: 75%;
+    --btn-top4-top:  4%;
+    --btn-top4-w:    18%;
+    --btn-top4-h:    9%;
+
+    /* 第四个按钮对应弹框，与第一个弹框同尺寸 */
+    --popup4-left: 6%;
+    --popup4-top:  15%;
+    --popup4-w:    88%;
+    --popup4-h:    25%;
+
+    /* ===== 第一层弹框：与 KAIXA 同尺寸 ===== */
+    --popup1-left: 6%;
+    --popup1-top:  15%;
+    --popup1-w:    88%;
+    --popup1-h:    25%;
+
     --bg:#000; --fg:#fff;
   }
 
@@ -46,6 +80,35 @@
     transform-origin:center;
   }
   .hit:active{ transform:scale(.98); }
+
+
+  .hit.circle{
+    border-radius:999px;
+  }
+
+  .popup{
+    position:absolute;
+    z-index:50;
+    display:none;
+    background:rgba(0,0,0,.6);
+    border:1.5px dashed #00ffff;
+    border-radius:12px;
+  }
+
+  .popup.show{
+    display:block;
+  }
+
+  .popup::after{
+    content:attr(data-label);
+    position:absolute;
+    left:8px;
+    top:6px;
+    font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+    color:#00ffff;
+    text-shadow:0 0 3px #000;
+    pointer-events:none;
+  }
 
   /* ===== 调试描边：对齐OK后，把这两段注释掉即可 ===== */
   .hit{ background:rgba(255,0,0,.22); border:1.5px dashed #00ffff; border-radius:8px; }
@@ -88,6 +151,27 @@
   <div class="wrap">
     <div class="phone" id="phone">
       <img src="assets/ui.jpg" alt="FAIZ UI" id="ui"/>
+
+
+      <!-- 顶部第一个圆形按钮：打开第一层弹框 -->
+      <button class="hit circle" id="btnTop1" aria-label="TOP1"></button>
+
+      <!-- 顶部第二个圆形按钮：变身后播放 READY -->
+      <button class="hit circle" id="btnTop2" aria-label="TOP2"></button>
+
+
+      <!-- 顶部第三个圆形按钮：交互与第二个按钮完全相同 -->
+      <button class="hit circle" id="btnTop3" aria-label="TOP3"></button>
+
+
+      <!-- 顶部第四个圆形按钮：打开第二个弹框 -->
+      <button class="hit circle" id="btnTop4" aria-label="TOP4"></button>
+
+      <!-- 第四个圆形按钮对应弹框 -->
+      <div class="popup" id="popup4" data-label="POPUP4"></div>
+
+      <!-- 第一层弹框：只保留空弹框，不放 KAIXA 的功能图标 -->
+      <div class="popup" id="popup1" data-label="POPUP1"></div>
 
       <!-- ENTER -->
       <button class="hit" id="btnEnter" aria-label="ENTER"></button>
@@ -162,89 +246,149 @@
 
   /* ------------ 规则/状态 ------------ */
   const COMBOS=['555','106','103'];
-  let buf='', transformed=false, armed=false, readyOnce=false;
-  let ringNode=null, standNode=null;
-  function stageOf(s){ for(const c of COMBOS){ if(c.startsWith(s)) return s.length; } return 0; }
-  function interruptRing(){ if(ringNode){ stop(ringNode); ringNode=null; } }
 
-  /* 每个真实按钮自行解锁音频；页面任意位置不再播放 openPhone */
-  let backgroundPreloadStarted=false;
+  let buf='';
+  let transformed=false;
+  let armed=false;
+  let readyArmed=false;
+  let ringNode=null;
+  let standNode=null;
 
-  async function ensureAudio(keys=[]){
+  /*
+   * 缓存加载方式与 KAIXA 一致：
+   * 必须先点击左下角 OPEN PHONE，
+   * 一次性加载 FAIZ 自己的全部音效。
+   *
+   * 注意：这里只复用缓存加载方式，
+   * 不复制 KAIXA 的任何模式音效或交互规则。
+   */
+  let audioReady=false;
+  let audioLoading=false;
+
+  function stageOf(s){
+    for(const c of COMBOS){
+      if(c.startsWith(s)) return s.length;
+    }
+    return 0;
+  }
+
+  function interruptRing(){
+    if(ringNode){
+      stop(ringNode);
+      ringNode=null;
+    }
+  }
+
+  async function ensureReady(){
     const c=ctx();
 
     try{
       if(c.state==='suspended') await c.resume();
     }catch{}
 
-    const requested=Array.isArray(keys) ? keys : [keys];
+    if(audioReady) return true;
+    if(audioLoading) return false;
 
-    await Promise.all(
-      requested
-        .filter(Boolean)
-        .map(k=>load(k).catch(()=>null))
-    );
+    audioLoading=true;
 
-    if(!backgroundPreloadStarted){
-      backgroundPreloadStarted=true;
-      Promise.all(Object.keys(BASE).map(k=>load(k).catch(()=>null)));
+    const openButton=document.getElementById('btnOpenPhone');
+    const oldText=openButton.textContent;
+    openButton.textContent='LOADING…';
+    openButton.disabled=true;
+
+    try{
+      await Promise.all(
+        Object.keys(BASE).map(k=>load(k).catch(()=>null))
+      );
+
+      audioReady=true;
+      return true;
+    }finally{
+      audioLoading=false;
+      openButton.textContent=oldText;
+      openButton.disabled=false;
     }
   }
 
   async function onOpenPhone(){
-    await ensureAudio('openPhone');
+    const ok=await ensureReady();
+    if(!ok && !audioReady) return;
+
     interruptRing();
     play('openPhone');
   }
 
-  async function pressDigit(k){
+  function playSequence(keys){
+    const queue=[...keys];
+
+    const next=()=>{
+      const key=queue.shift();
+      if(!key) return;
+
+      const node=play(key);
+
+      if(queue.length===0) return;
+
+      if(node){
+        node.onended=next;
+      }else{
+        setTimeout(next,180);
+      }
+    };
+
+    next();
+  }
+
+  function pressDigit(k){
+    if(!audioReady) return;
+
     interruptRing();
 
     const s=(buf+k).slice(-3);
     const stage=stageOf(s);
-    const soundKey =
-      stage===2 ? 'key5_2' :
-      stage===3 ? 'key5_3' :
-      'key1';
 
-    await ensureAudio(soundKey);
-    play(soundKey);
+    if(stage===1) play('key1');
+    else if(stage===2) play('key5_2');
+    else if(stage===3) play('key5_3');
+    else play('key1');
 
     buf=s;
 
     if(buf==='3821'){
-      await ensureAudio('combo3821');
       play('combo3821');
     }
   }
 
-  async function onEnter(){
+  function onEnter(){
+    if(!audioReady) return;
+
     interruptRing();
 
+    /*
+     * 变身后新规则：
+     * 1. 顶部第二个圆形按钮播放 ready，并进入待命状态。
+     * 2. 再按 ENTER，按顺序播放 enter → exceed。
+     * 3. 没有先按顶部第二个圆形按钮时，ENTER 只播放 enter。
+     */
     if(transformed){
-      if(!readyOnce){
-        await ensureAudio('ready');
-        play('ready');
-        readyOnce=true;
-        return;
+      if(readyArmed){
+        playSequence(['enter','exceed']);
+        readyArmed=false;
+      }else{
+        play('enter');
       }
-
-      await ensureAudio(['enter','exceed']);
-      play('enter');
-      play('exceed');
-      readyOnce=false;
       return;
     }
 
     if(armed){
-      await ensureAudio('complete');
       stop(standNode);
       standNode=null;
 
       const s=play('complete');
+
       const done=()=>{
         transformed=true;
-        readyOnce=false;
+        readyArmed=false;
         armed=false;
         buf='';
       };
@@ -255,11 +399,9 @@
       return;
     }
 
-    await ensureAudio('enter');
     play('enter');
 
     if(buf==='555'){
-      await ensureAudio('standBy');
       stop(standNode);
       standNode=play('standBy');
 
@@ -276,54 +418,55 @@
     }
 
     if(buf.length===3 && buf!=='3821'){
-      await ensureAudio('error');
       play('error');
-
       buf='';
       armed=false;
-      readyOnce=false;
+      readyArmed=false;
     }
   }
 
-  async function onStar(){
+  function onStar(){
+    if(!audioReady) return;
+
     interruptRing();
 
-    const soundKey=transformed ? 'weaponHit' : 'key1';
-
-    await ensureAudio(soundKey);
-    play(soundKey);
+    if(transformed) play('weaponHit');
+    else play('key1');
 
     buf=(buf+'*').slice(-3);
   }
 
-  async function ringStart(){
+  function ringStart(){
+    if(!audioReady) return;
+
     interruptRing();
-    await ensureAudio('ring');
     ringNode=play('ring',{loop:true});
   }
 
   function ringStop(){
+    if(!audioReady) return;
     interruptRing();
   }
 
-  async function onClear(){
+  function onClear(){
+    if(!audioReady) return;
+
     interruptRing();
 
     if(!transformed){
-      await ensureAudio('key1');
       play('key1');
       buf='';
       return;
     }
 
-    await ensureAudio(['key1','release']);
     play('key1');
 
     const s=play('release');
+
     const done=()=>{
       transformed=false;
       armed=false;
-      readyOnce=false;
+      readyArmed=false;
       buf='';
     };
 
@@ -331,7 +474,40 @@
     else done();
   }
 
+  /* 第一个圆形按钮：打开/关闭第一个弹框 */
+  function togglePopup1(){
+    const popup1=document.getElementById('popup1');
+    const popup4=document.getElementById('popup4');
+
+    popup4.classList.remove('show');
+    popup1.classList.toggle('show');
+  }
+
+  /* 第四个圆形按钮：打开/关闭第二个弹框 */
+  function togglePopup4(){
+    const popup1=document.getElementById('popup1');
+    const popup4=document.getElementById('popup4');
+
+    popup1.classList.remove('show');
+    popup4.classList.toggle('show');
+  }
+
+  /* 第二、第三个圆形按钮：仅在 FAIZ 变身后播放 ready */
+  function onTop2Ready(){
+    if(!audioReady) return;
+    if(!transformed) return;
+
+    interruptRing();
+    play('ready');
+    readyArmed=true;
+  }
+
   /* ------------ 绑定 ------------ */
+  document.getElementById('btnTop1').addEventListener('click', togglePopup1);
+  document.getElementById('btnTop2').addEventListener('click', onTop2Ready);
+  document.getElementById('btnTop3').addEventListener('click', onTop2Ready);
+  document.getElementById('btnTop4').addEventListener('click', togglePopup4);
+
   document.querySelectorAll('.hit[data-k]').forEach(b=>{
     const k=b.dataset.k;
     if(k==='*') b.addEventListener('click', onStar);
@@ -346,6 +522,57 @@
   /* ------------ 位置：按百分比摆放（本次已整体缩小） ------------ */
   function place(){
     const css = getComputedStyle(document.documentElement);
+
+    setRectPct(
+      document.getElementById('btnTop1'),
+      pct('--btn-top1-left'),
+      pct('--btn-top1-top'),
+      pct('--btn-top1-w'),
+      pct('--btn-top1-h')
+    );
+
+    setRectPct(
+      document.getElementById('btnTop2'),
+      pct('--btn-top2-left'),
+      pct('--btn-top2-top'),
+      pct('--btn-top2-w'),
+      pct('--btn-top2-h')
+    );
+
+
+    setRectPct(
+      document.getElementById('btnTop3'),
+      pct('--btn-top3-left'),
+      pct('--btn-top3-top'),
+      pct('--btn-top3-w'),
+      pct('--btn-top3-h')
+    );
+
+
+    setRectPct(
+      document.getElementById('btnTop4'),
+      pct('--btn-top4-left'),
+      pct('--btn-top4-top'),
+      pct('--btn-top4-w'),
+      pct('--btn-top4-h')
+    );
+
+    setRectPct(
+      document.getElementById('popup1'),
+      pct('--popup1-left'),
+      pct('--popup1-top'),
+      pct('--popup1-w'),
+      pct('--popup1-h')
+    );
+
+
+    setRectPct(
+      document.getElementById('popup4'),
+      pct('--popup4-left'),
+      pct('--popup4-top'),
+      pct('--popup4-w'),
+      pct('--popup4-h')
+    );
     const enter = document.getElementById('btnEnter');
     setPct(enter, '--enter-left','--enter-top','--enter-w','--enter-h');
 
