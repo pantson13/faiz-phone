@@ -250,6 +250,7 @@
   let buf='';
   let transformed=false;
   let armed=false;
+  let standByPlaying=false;
   let readyArmed=false;
   let ringNode=null;
   let standNode=null;
@@ -380,8 +381,16 @@
       return;
     }
 
+    /* stand by 尚未播放结束时，ENTER 不响应 */
+    if(standByPlaying){
+      return;
+    }
+
+    /*
+     * stand by 播放结束后：
+     * ENTER 不播放 enter 按钮音效，只播放 complete。
+     */
     if(armed){
-      stop(standNode);
       standNode=null;
 
       const s=play('complete');
@@ -390,6 +399,7 @@
         transformed=true;
         readyArmed=false;
         armed=false;
+        standByPlaying=false;
         buf='';
       };
 
@@ -403,13 +413,23 @@
 
     if(buf==='555'){
       stop(standNode);
+
+      armed=false;
+      standByPlaying=true;
       standNode=play('standBy');
 
+      const standbyDone=()=>{
+        standNode=null;
+        standByPlaying=false;
+        armed=true;
+      };
+
       if(standNode){
-        standNode.onended=()=>standNode=null;
+        standNode.onended=standbyDone;
+      }else{
+        standbyDone();
       }
 
-      armed=true;
       return;
     }
 
@@ -421,6 +441,7 @@
       play('error');
       buf='';
       armed=false;
+      standByPlaying=false;
       readyArmed=false;
     }
   }
@@ -466,6 +487,7 @@
     const done=()=>{
       transformed=false;
       armed=false;
+      standByPlaying=false;
       readyArmed=false;
       buf='';
     };
