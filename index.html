@@ -17,43 +17,131 @@
     --ui: url('assets/ui.jpg');
 
     /* ↓↓↓ 按钮整体更小：只要微调这几个百分比即可 ↓↓↓ */
-    --enter-left: 25%;   /* ENTER 左边距（%） */
-    --enter-top:  50.5%; /* ENTER 顶部（%）   */
-    --enter-w:    25%;   /* ENTER 宽度（%）   */
+    --enter-left: 28%;   /* ENTER 左边距（%） */
+    --enter-top:  52.6%; /* ENTER 顶部（%）   */
+    --enter-w:    23%;   /* ENTER 宽度（%）   */
     --enter-h:    4%;  /* ENTER 高度（%）   */
 
-    --row2-left:  25%; /* 第二行首键（铃声）左边距 */
-    --row2-top:   57%; /* 第二行顶边 */
-    --key-w:      14%; /* 每个数字键(含铃声/清除/停止)宽度 - 已明显缩小 */
-    --key-h:      4.5%; /* 每个键高度 - 已明显缩小 */
-    --gap-x:      4%;  /* 列间距 */
-    --gap-y:      1.3%;  /* 行间距 */
+    /* =====================================================
+       ENTER 下方 15 个按钮：每个按钮都可单独调整
+       left = 左右位置；top = 上下位置；w = 宽度；h = 高度
+       ===================================================== */
+
+    /* 铃声 */
+    --ring-left: 28%;
+    --ring-top:  59%;
+    --ring-w:    13%;
+    --ring-h:    4.4%;
+
+    /* クリア */
+    --clear-left: 44.8%;
+    --clear-top:  59%;
+    --clear-w:    12%;
+    --clear-h:    4.4%;
+
+    /* 停止 */
+    --stop-left: 60%;
+    --stop-top:  59%;
+    --stop-w:    13%;
+    --stop-h:    4.4%;
+
+    /* 数字 1 */
+    --key1-left: 28%;
+    --key1-top:  64.6%;
+    --key1-w:    13%;
+    --key1-h:    4.4%;
+
+    /* 数字 2 */
+    --key2-left: 44.8%;
+    --key2-top:  64.6%;
+    --key2-w:    12%;
+    --key2-h:    4.4%;
+
+    /* 数字 3 */
+    --key3-left: 60%;
+    --key3-top:  64.6%;
+    --key3-w:    13%;
+    --key3-h:    4.4%;
+
+    /* 数字 4 */
+    --key4-left: 28%;
+    --key4-top:  70%;
+    --key4-w:    13%;
+    --key4-h:    4.3%;
+
+    /* 数字 5 */
+    --key5-left: 44.8%;
+    --key5-top:  70%;
+    --key5-w:    12%;
+    --key5-h:    4.4%;
+
+    /* 数字 6 */
+    --key6-left: 60%;
+    --key6-top:  70%;
+    --key6-w:    13%;
+    --key6-h:    4.4%;
+
+    /* 数字 7 */
+    --key7-left: 28%;
+    --key7-top:  75.6%;
+    --key7-w:    12%;
+    --key7-h:    4.2%;
+
+    /* 数字 8 */
+    --key8-left: 44.6%;
+    --key8-top:  75.6%;
+    --key8-w:    12%;
+    --key8-h:    4.2%;
+
+    /* 数字 9 */
+    --key9-left: 60%;
+    --key9-top:  75.6%;
+    --key9-w:    12%;
+    --key9-h:    4.2%;
+
+    /* 星号 */
+    --star-left: 28%;
+    --star-top:  81%;
+    --star-w:    12%;
+    --star-h:    4.2%;
+
+    /* 数字 0 */
+    --key0-left: 44%;
+    --key0-top:  81%;
+    --key0-w:    12%;
+    --key0-h:    4.2%;
+
+    /* 井号 */
+    --hash-left: 60%;
+    --hash-top:  81%;
+    --hash-w:    12%;
+    --hash-h:    4.2%;
 
 
     /* ===== FAIZ 顶部两个圆形按钮 ===== */
-    --btn-top1-left: 6%;
-    --btn-top1-top:  4%;
+    --btn-top1-left: 4.2%;
+    --btn-top1-top:  3%;
     --btn-top1-w:    18%;
     --btn-top1-h:    9%;
 
     /* TOP1 下方新增圆形按钮 */
-    --btn-top1b-left: 6%;
+    --btn-top1b-left: 4.2%;
     --btn-top1b-top:  14%;
     --btn-top1b-w:    18%;
     --btn-top1b-h:    9%;
 
     --btn-top2-left: 29%;
-    --btn-top2-top:  4%;
+    --btn-top2-top:  3%;
     --btn-top2-w:    18%;
     --btn-top2-h:    9%;
 
-    --btn-top3-left: 52%;
-    --btn-top3-top:  4%;
+    --btn-top3-left: 54.5%;
+    --btn-top3-top:  3%;
     --btn-top3-w:    18%;
     --btn-top3-h:    9%;
 
-    --btn-top4-left: 75%;
-    --btn-top4-top:  4%;
+    --btn-top4-left: 78.6%;
+    --btn-top4-top:  3%;
     --btn-top4-w:    18%;
     --btn-top4-h:    9%;
 
@@ -192,21 +280,21 @@
       <button class="hit" id="btnStop"  aria-label="停止"></button>
 
       <!-- 数字键 1~9、*0# -->
-      <button class="hit" data-k="1" aria-label="1"></button>
-      <button class="hit" data-k="2" aria-label="2"></button>
-      <button class="hit" data-k="3" aria-label="3"></button>
+      <button class="hit" id="btnKey1" data-k="1" aria-label="1"></button>
+      <button class="hit" id="btnKey2" data-k="2" aria-label="2"></button>
+      <button class="hit" id="btnKey3" data-k="3" aria-label="3"></button>
 
-      <button class="hit" data-k="4" aria-label="4"></button>
-      <button class="hit" data-k="5" aria-label="5"></button>
-      <button class="hit" data-k="6" aria-label="6"></button>
+      <button class="hit" id="btnKey4" data-k="4" aria-label="4"></button>
+      <button class="hit" id="btnKey5" data-k="5" aria-label="5"></button>
+      <button class="hit" id="btnKey6" data-k="6" aria-label="6"></button>
 
-      <button class="hit" data-k="7" aria-label="7"></button>
-      <button class="hit" data-k="8" aria-label="8"></button>
-      <button class="hit" data-k="9" aria-label="9"></button>
+      <button class="hit" id="btnKey7" data-k="7" aria-label="7"></button>
+      <button class="hit" id="btnKey8" data-k="8" aria-label="8"></button>
+      <button class="hit" id="btnKey9" data-k="9" aria-label="9"></button>
 
-      <button class="hit" data-k="*" aria-label="*"></button>
-      <button class="hit" data-k="0" aria-label="0"></button>
-      <button class="hit" data-k="#" aria-label="#"></button>
+      <button class="hit" id="btnStar" data-k="*" aria-label="*"></button>
+      <button class="hit" id="btnKey0" data-k="0" aria-label="0"></button>
+      <button class="hit" id="btnHash" data-k="#" aria-label="#"></button>
     </div>
   </div>
 
@@ -658,26 +746,51 @@
     const enter = document.getElementById('btnEnter');
     setPct(enter, '--enter-left','--enter-top','--enter-w','--enter-h');
 
-    const ring  = document.getElementById('btnRing');
-    const clear = document.getElementById('btnClear');
-    const stopB = document.getElementById('btnStop');
+    /* ENTER 下方 15 个按钮：全部独立定位 */
+    setPct(document.getElementById('btnRing'),
+      '--ring-left','--ring-top','--ring-w','--ring-h');
 
-    const r2L = pct('--row2-left'), r2T = pct('--row2-top');
-    const gapX= pct('--gap-x'),     gapY = pct('--gap-y');
-    const keyW= pct('--key-w'),     keyH = pct('--key-h');
+    setPct(document.getElementById('btnClear'),
+      '--clear-left','--clear-top','--clear-w','--clear-h');
 
-    setRectPct(ring , r2L,                     r2T, keyW, keyH);
-    setRectPct(clear, r2L + keyW + gapX,       r2T, keyW, keyH);
-    setRectPct(stopB, r2L + (keyW+gapX)*2,     r2T, keyW, keyH);
+    setPct(document.getElementById('btnStop'),
+      '--stop-left','--stop-top','--stop-w','--stop-h');
 
-    const keys=[...document.querySelectorAll('.hit[data-k]')];
-    const startL=r2L, startT=r2T + keyH + gapY;
-    keys.forEach((el,i)=>{
-      const row=Math.floor(i/3), col=i%3;
-      const L=startL + col*(keyW+gapX);
-      const T=startT + row*(keyH+gapY);
-      setRectPct(el, L, T, keyW, keyH);
-    });
+    setPct(document.getElementById('btnKey1'),
+      '--key1-left','--key1-top','--key1-w','--key1-h');
+
+    setPct(document.getElementById('btnKey2'),
+      '--key2-left','--key2-top','--key2-w','--key2-h');
+
+    setPct(document.getElementById('btnKey3'),
+      '--key3-left','--key3-top','--key3-w','--key3-h');
+
+    setPct(document.getElementById('btnKey4'),
+      '--key4-left','--key4-top','--key4-w','--key4-h');
+
+    setPct(document.getElementById('btnKey5'),
+      '--key5-left','--key5-top','--key5-w','--key5-h');
+
+    setPct(document.getElementById('btnKey6'),
+      '--key6-left','--key6-top','--key6-w','--key6-h');
+
+    setPct(document.getElementById('btnKey7'),
+      '--key7-left','--key7-top','--key7-w','--key7-h');
+
+    setPct(document.getElementById('btnKey8'),
+      '--key8-left','--key8-top','--key8-w','--key8-h');
+
+    setPct(document.getElementById('btnKey9'),
+      '--key9-left','--key9-top','--key9-w','--key9-h');
+
+    setPct(document.getElementById('btnStar'),
+      '--star-left','--star-top','--star-w','--star-h');
+
+    setPct(document.getElementById('btnKey0'),
+      '--key0-left','--key0-top','--key0-w','--key0-h');
+
+    setPct(document.getElementById('btnHash'),
+      '--hash-left','--hash-top','--hash-w','--hash-h');
 
     function pct(varName){ return parseFloat(css.getPropertyValue(varName)) || 0; }
     function setPct(el, l,t,w,h){ setRectPct(el, pct(l), pct(t), pct(w), pct(h)); }
