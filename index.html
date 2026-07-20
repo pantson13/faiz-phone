@@ -55,9 +55,36 @@
     color:#00ffff; text-shadow:0 0 3px #000; pointer-events:none;
   }
   /* =============================================== */
+
+  /* 左下角开机音按钮 */
+  .open-phone-btn{
+    position:fixed;
+    left:calc(14px + env(safe-area-inset-left));
+    bottom:calc(14px + env(safe-area-inset-bottom));
+    z-index:9999;
+    min-width:92px;
+    height:44px;
+    padding:0 14px;
+    border:1px solid rgba(255,255,255,.5);
+    border-radius:12px;
+    background:rgba(0,0,0,.78);
+    color:#fff;
+    font:700 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+    letter-spacing:.5px;
+    box-shadow:0 4px 16px rgba(0,0,0,.38);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    touch-action:manipulation;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .open-phone-btn:active{
+    transform:scale(.96);
+  }
+
 </style>
 </head>
 <body>
+  <button class="open-phone-btn" id="btnOpenPhone" type="button" aria-label="播放开机音">OPEN PHONE</button>
   <div class="wrap">
     <div class="phone" id="phone">
       <img src="assets/ui.jpg" alt="FAIZ UI" id="ui"/>
@@ -140,44 +167,169 @@
   function stageOf(s){ for(const c of COMBOS){ if(c.startsWith(s)) return s.length; } return 0; }
   function interruptRing(){ if(ringNode){ stop(ringNode); ringNode=null; } }
 
-  async function unlock(){
-    const c=ctx(); try{ if(c.state==='suspended') await c.resume(); }catch{}
-    await Promise.all(Object.keys(BASE).map(k=>load(k).catch(()=>null)));
+  /* 每个真实按钮自行解锁音频；页面任意位置不再播放 openPhone */
+  let backgroundPreloadStarted=false;
+
+  async function ensureAudio(keys=[]){
+    const c=ctx();
+
+    try{
+      if(c.state==='suspended') await c.resume();
+    }catch{}
+
+    const requested=Array.isArray(keys) ? keys : [keys];
+
+    await Promise.all(
+      requested
+        .filter(Boolean)
+        .map(k=>load(k).catch(()=>null))
+    );
+
+    if(!backgroundPreloadStarted){
+      backgroundPreloadStarted=true;
+      Promise.all(Object.keys(BASE).map(k=>load(k).catch(()=>null)));
+    }
+  }
+
+  async function onOpenPhone(){
+    await ensureAudio('openPhone');
+    interruptRing();
     play('openPhone');
   }
-  const unlockOnce=()=>{ unlock(); document.removeEventListener('pointerdown',unlockOnce,true); document.removeEventListener('touchend',unlockOnce,true); document.removeEventListener('click',unlockOnce,true); };
-  ['pointerdown','touchend','click'].forEach(ev=>document.addEventListener(ev,unlockOnce,{once:true,passive:true}));
 
-  function pressDigit(k){
+  async function pressDigit(k){
     interruptRing();
+
     const s=(buf+k).slice(-3);
     const stage=stageOf(s);
-    if(stage===1) play('key1'); else if(stage===2) play('key5_2'); else if(stage===3) play('key5_3'); else play('key1');
+    const soundKey =
+      stage===2 ? 'key5_2' :
+      stage===3 ? 'key5_3' :
+      'key1';
+
+    await ensureAudio(soundKey);
+    play(soundKey);
+
     buf=s;
-    if(buf==='3821') play('combo3821');
-  }
-  function onEnter(){
-    interruptRing();
-    if(transformed){
-      if(!readyOnce){ play('ready'); readyOnce=true; return; }
-      play('enter'); play('exceed'); readyOnce=false; return;
+
+    if(buf==='3821'){
+      await ensureAudio('combo3821');
+      play('combo3821');
     }
-    if(armed){
-      stop(standNode); standNode=null;
-      const s=play('complete');
-      const done=()=>{ transformed=true; readyOnce=false; armed=false; buf=''; };
-      if(s) s.onended=done; else setTimeout(done,380);
+  }
+
+  async function onEnter(){
+    interruptRing();
+
+    if(transformed){
+      if(!readyOnce){
+        await ensureAudio('ready');
+        play('ready');
+        readyOnce=true;
+        return;
+      }
+
+      await ensureAudio(['enter','exceed']);
+      play('enter');
+      play('exceed');
+      readyOnce=false;
       return;
     }
+
+    if(armed){
+      await ensureAudio('complete');
+      stop(standNode);
+      standNode=null;
+
+      const s=play('complete');
+      const done=()=>{
+        transformed=true;
+        readyOnce=false;
+        armed=false;
+        buf='';
+      };
+
+      if(s) s.onended=done;
+      else setTimeout(done,380);
+
+      return;
+    }
+
+    await ensureAudio('enter');
     play('enter');
-    if(buf==='555'){ stop(standNode); standNode=play('standBy'); if(standNode) standNode.onended=()=>standNode=null; armed=true; return; }
-    if(buf==='106'||buf==='103'){ return; }
-    if(buf.length===3 && buf!=='3821'){ play('error'); buf=''; armed=false; readyOnce=false; }
+
+    if(buf==='555'){
+      await ensureAudio('standBy');
+      stop(standNode);
+      standNode=play('standBy');
+
+      if(standNode){
+        standNode.onended=()=>standNode=null;
+      }
+
+      armed=true;
+      return;
+    }
+
+    if(buf==='106'||buf==='103'){
+      return;
+    }
+
+    if(buf.length===3 && buf!=='3821'){
+      await ensureAudio('error');
+      play('error');
+
+      buf='';
+      armed=false;
+      readyOnce=false;
+    }
   }
-  function onStar(){ interruptRing(); if(transformed) play('weaponHit'); else play('key1'); buf=(buf+'*').slice(-3); }
-  function ringStart(){ interruptRing(); ringNode=play('ring',{loop:true}); }
-  function ringStop(){ interruptRing(); }
-  function onClear(){ interruptRing(); if(!transformed){ play('key1'); buf=''; return; } play('key1'); const s=play('release'); const done=()=>{ transformed=false; armed=false; readyOnce=false; buf=''; }; if(s) s.onended=done; else done(); }
+
+  async function onStar(){
+    interruptRing();
+
+    const soundKey=transformed ? 'weaponHit' : 'key1';
+
+    await ensureAudio(soundKey);
+    play(soundKey);
+
+    buf=(buf+'*').slice(-3);
+  }
+
+  async function ringStart(){
+    interruptRing();
+    await ensureAudio('ring');
+    ringNode=play('ring',{loop:true});
+  }
+
+  function ringStop(){
+    interruptRing();
+  }
+
+  async function onClear(){
+    interruptRing();
+
+    if(!transformed){
+      await ensureAudio('key1');
+      play('key1');
+      buf='';
+      return;
+    }
+
+    await ensureAudio(['key1','release']);
+    play('key1');
+
+    const s=play('release');
+    const done=()=>{
+      transformed=false;
+      armed=false;
+      readyOnce=false;
+      buf='';
+    };
+
+    if(s) s.onended=done;
+    else done();
+  }
 
   /* ------------ 绑定 ------------ */
   document.querySelectorAll('.hit[data-k]').forEach(b=>{
@@ -185,6 +337,7 @@
     if(k==='*') b.addEventListener('click', onStar);
     else        b.addEventListener('click', ()=>pressDigit(k));
   });
+  document.getElementById('btnOpenPhone').addEventListener('click', onOpenPhone);
   document.getElementById('btnEnter').addEventListener('click', onEnter);
   document.getElementById('btnRing').addEventListener('click', ringStart);
   document.getElementById('btnStop').addEventListener('click', ringStop);

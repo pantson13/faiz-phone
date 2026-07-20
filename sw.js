@@ -1,4 +1,4 @@
-const CACHE_NAME = "faiz-pwa-v1";
+const CACHE_NAME = "faiz-pwa-v2";
 
 const APP_SHELL = [
   "./",
@@ -12,12 +12,13 @@ const APP_SHELL = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      // 单个文件缺失时不让整个 PWA 安装失败。
-      await Promise.allSettled(
-        APP_SHELL.map((url) => cache.add(url))
-      );
-    }).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then(async (cache) => {
+        await Promise.allSettled(
+          APP_SHELL.map((url) => cache.add(url))
+        );
+      })
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -41,10 +42,6 @@ self.addEventListener("fetch", (event) => {
 
   if (url.origin !== self.location.origin) return;
 
-  /*
-   * 原页面会用 HEAD 探测 m4a/mp3/wav/mp4。
-   * 离线时，如果对应 GET 文件已缓存，就返回一个成功的 HEAD 响应。
-   */
   if (request.method === "HEAD") {
     event.respondWith(
       caches.match(new Request(request.url, { method: "GET" }))
@@ -64,11 +61,6 @@ self.addEventListener("fetch", (event) => {
 
   if (request.method !== "GET") return;
 
-  /*
-   * 网络优先：
-   * 你替换 ui.jpg 或更新代码后，会优先取得新版；
-   * 断网时再回退到手机本地缓存。
-   */
   event.respondWith(
     fetch(request)
       .then((response) => {
@@ -88,7 +80,9 @@ self.addEventListener("fetch", (event) => {
 
         return new Response("Offline", {
           status: 503,
-          headers: { "Content-Type": "text/plain; charset=utf-8" }
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8"
+          }
         });
       })
   );
