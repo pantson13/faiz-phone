@@ -36,6 +36,12 @@
     --btn-top1-w:    18%;
     --btn-top1-h:    9%;
 
+    /* TOP1 下方新增圆形按钮 */
+    --btn-top1b-left: 6%;
+    --btn-top1b-top:  14%;
+    --btn-top1b-w:    18%;
+    --btn-top1b-h:    9%;
+
     --btn-top2-left: 29%;
     --btn-top2-top:  4%;
     --btn-top2-w:    18%;
@@ -155,6 +161,10 @@
 
       <!-- 顶部第一个圆形按钮：打开第一层弹框 -->
       <button class="hit circle" id="btnTop1" aria-label="TOP1"></button>
+
+
+      <!-- TOP1 正下方新增圆形按钮：暂未绑定交互 -->
+      <button class="hit circle" id="btnTop1B" aria-label="TOP1-B"></button>
 
       <!-- 顶部第二个圆形按钮：变身后播放 READY -->
       <button class="hit circle" id="btnTop2" aria-label="TOP2"></button>
@@ -551,6 +561,15 @@
       pct('--btn-top1-top'),
       pct('--btn-top1-w'),
       pct('--btn-top1-h')
+    );
+
+
+    setRectPct(
+      document.getElementById('btnTop1B'),
+      pct('--btn-top1b-left'),
+      pct('--btn-top1b-top'),
+      pct('--btn-top1b-w'),
+      pct('--btn-top1b-h')
     );
 
     setRectPct(
