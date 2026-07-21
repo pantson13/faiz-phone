@@ -378,10 +378,14 @@
     seedEnd:   'assets/seed-end',
     startup:        'assets/startup',
     seeding:        'assets/seeding',
-    burstMode:      'assets/burst_mode',
-    sigleMode:      'assets/sigle_mode',
-    burstModeFire:  'assets/burst_mode-fire',
-    sigleModeFire:  'assets/sigle_mode_fire'
+    burstMode:                'assets/burst_mode',
+    burstModeFallbackDash:    'assets/burst-mode',
+    sigleMode:                'assets/sigle_mode',
+    singleModeFallback:       'assets/single_mode',
+    burstModeFire:            'assets/burst_mode-fire',
+    burstModeFireFallback:    'assets/burst_mode_fire',
+    sigleModeFire:            'assets/sigle_mode_fire',
+    singleModeFireFallback:   'assets/single_mode_fire'
   };
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
   const urlMap = {};
@@ -389,21 +393,73 @@
   let ac=null, master=null;
   const buffers=new Map();
   function ctx(){ if(ac) return ac; const C=window.AudioContext||window.webkitAudioContext; ac=new C({latencyHint:'interactive'}); master=ac.createGain(); master.gain.value=1; master.connect(ac.destination); return ac; }
-  async function resolveUrl(base){
-    if(urlMap[base]) return urlMap[base];
-    for(const ext of EXT){
-      const u = `${base}${ext}`;
-      try{ const r = await fetch(u,{method:'HEAD',cache:'no-store'}); if(r.ok){ urlMap[base]=u; return u; } }catch{}
-    }
-    return null;
-  }
+  /*
+   * 音效加载器：
+   * 不再使用 HEAD 探测文件，因为 GitHub Pages / PWA 缓存环境
+   * 可能对 HEAD 返回异常，导致文件实际存在却被误判为不存在。
+   *
+   * 现在会直接逐个尝试 GET：
+   * .m4a → .mp3 → .wav → .mp4
+   */
   async function load(key){
     if(buffers.has(key)) return buffers.get(key);
-    const url = await resolveUrl(BASE[key]); if(!url) return null;
-    const res = await fetch(url,{cache:'no-store'}); if(!res.ok) return null;
-    const arr = await res.arrayBuffer();
-    const b = await ctx().decodeAudioData(arr);
-    buffers.set(key,b); return b;
+
+    const base=BASE[key];
+    if(!base) return null;
+
+    /*
+     * 已经解析过真实地址时优先直接读取。
+     */
+    const knownUrl=urlMap[base];
+
+    if(knownUrl){
+      try{
+        const res=await fetch(knownUrl,{cache:'no-store'});
+
+        if(res.ok){
+          const arr=await res.arrayBuffer();
+          const b=await ctx().decodeAudioData(arr.slice(0));
+          buffers.set(key,b);
+          return b;
+        }
+      }catch(error){
+        console.warn(`${key} 已记录地址读取失败，重新探测：`,error);
+      }
+
+      delete urlMap[base];
+    }
+
+    /*
+     * 直接 GET 每一种扩展名。
+     * 只有真实取得并成功解码的文件才算加载成功。
+     */
+    for(const ext of EXT){
+      const url=`${base}${ext}`;
+
+      try{
+        const res=await fetch(url,{cache:'no-store'});
+
+        if(!res.ok) continue;
+
+        const arr=await res.arrayBuffer();
+
+        if(!arr || arr.byteLength===0) continue;
+
+        const b=await ctx().decodeAudioData(arr.slice(0));
+
+        urlMap[base]=url;
+        buffers.set(key,b);
+
+        return b;
+      }catch(error){
+        /*
+         * 当前扩展名失败时继续尝试下一种，
+         * 不让一个 404 或解码失败终止整个加载过程。
+         */
+      }
+    }
+
+    return null;
   }
   function play(key,{loop=false}={}){ const b=buffers.get(key); if(!b) return null; const s=ctx().createBufferSource(); s.buffer=b; s.loop=!!loop; s.connect(master); s.start(); return s; }
   function stop(n){ if(n&&n.stop){ try{n.stop();}catch{} } }
@@ -428,6 +484,7 @@
    */
   let modeFireType=null;
   let modeFireShots=0;
+  let modeSequenceToken=0;
   const MODE_FIRE_MAX_SHOTS=3;
 
 
@@ -693,33 +750,126 @@
   function resetModeFire(){
     modeFireType=null;
     modeFireShots=0;
+
+    /*
+     * 每次重置都会使旧的异步模式序列失效。
+     */
+    modeSequenceToken+=1;
   }
 
-  function armModeFire(type){
+  function armModeFire(type,token){
+    if(token!==modeSequenceToken) return;
+
     modeFireType=type;
     modeFireShots=0;
   }
 
-  function onModeFire(){
+  async function ensureFirstAvailable(keys){
+    for(const key of keys){
+      const loaded=await ensureSoundLoaded(key);
+
+      if(loaded){
+        return key;
+      }
+    }
+
+    return null;
+  }
+
+  /*
+   * 立即播放 enter，同时并行加载第二段模式音效。
+   * enter 播放完后，确认第二段真实存在才继续播放。
+   * 第二段真实播放结束后，才解锁三次 FIRE。
+   */
+  function startModeSequence(type,modeCandidates){
+    resetModeFire();
+    const token=modeSequenceToken;
+
+    const modeKeyPromise=ensureFirstAvailable(modeCandidates);
+    const enterNode=play('enter');
+
+    const playMode=async()=>{
+      if(token!==modeSequenceToken) return;
+
+      const modeKey=await modeKeyPromise;
+
+      if(token!==modeSequenceToken) return;
+
+      if(!modeKey){
+        console.warn(
+          type==='burst'
+            ? '未找到 assets/burst_mode.m4a 或 assets/burst-mode.m4a'
+            : '未找到 assets/sigle_mode.m4a 或 assets/single_mode.m4a'
+        );
+        return;
+      }
+
+      const modeNode=play(modeKey);
+
+      if(!modeNode){
+        console.warn(`${modeKey} 无法播放`);
+        return;
+      }
+
+      modeNode.onended=()=>{
+        armModeFire(type,token);
+      };
+    };
+
+    if(enterNode){
+      enterNode.onended=playMode;
+    }else{
+      setTimeout(playMode,180);
+    }
+  }
+
+  async function onModeFire(){
     if(!audioReady) return;
     if(!modeFireType) return;
     if(modeFireShots>=MODE_FIRE_MAX_SHOTS) return;
 
     interruptRing();
 
+    let fireKey=null;
+
     if(modeFireType==='burst'){
-      play('burstModeFire');
+      fireKey=await ensureFirstAvailable([
+        'burstModeFire',
+        'burstModeFireFallback'
+      ]);
     }else if(modeFireType==='sigle'){
-      play('sigleModeFire');
+      fireKey=await ensureFirstAvailable([
+        'sigleModeFire',
+        'singleModeFireFallback'
+      ]);
     }else{
+      return;
+    }
+
+    /*
+     * 音效不存在或播放失败时，不扣除射击次数。
+     */
+    if(!fireKey){
+      console.warn(
+        modeFireType==='burst'
+          ? '未找到 assets/burst_mode-fire.m4a 或 assets/burst_mode_fire.m4a'
+          : '未找到 assets/sigle_mode_fire.m4a 或 assets/single_mode_fire.m4a'
+      );
+      return;
+    }
+
+    const fireNode=play(fireKey);
+
+    if(!fireNode){
+      console.warn(`${fireKey} 无法播放`);
       return;
     }
 
     modeFireShots+=1;
 
     /*
-     * 第三次点击完成后立即锁定。
-     * 必须重新输入 106 或 103 并完成模式音效后才能再次使用。
+     * 第三次成功播放后立即锁定。
+     * 必须重新输入 106 或 103 才能再次使用。
      */
     if(modeFireShots>=MODE_FIRE_MAX_SHOTS){
       modeFireType=null;
@@ -821,22 +971,27 @@
      * enter 播放完后再播放对应模式音效。
      */
     if(buf==='106'){
-      resetModeFire();
-
-      playSequence(['enter','burstMode'],()=>{
-        armModeFire('burst');
-      });
+      /*
+       * 优先 burst_mode，同时兼容 burst-mode。
+       */
+      startModeSequence('burst',[
+        'burstMode',
+        'burstModeFallbackDash'
+      ]);
 
       buf='';
       return;
     }
 
     if(buf==='103'){
-      resetModeFire();
-
-      playSequence(['enter','sigleMode'],()=>{
-        armModeFire('sigle');
-      });
+      /*
+       * 优先使用用户指定的 sigle_mode，
+       * 若文件实际采用 single_mode 拼写则自动兼容。
+       */
+      startModeSequence('sigle',[
+        'sigleMode',
+        'singleModeFallback'
+      ]);
 
       buf='';
       return;
