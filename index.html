@@ -157,6 +157,26 @@
     --popup1-w:    88%;
     --popup1-h:    25%;
 
+
+    /*
+     * TOP1 弹窗内三个圆形按钮。
+     * 尺寸按 KAIXA 顶部圆形按钮比例换算到 popup1 内部。
+     */
+    --popup1-btn1-left: 7%;
+    --popup1-btn1-top:  32%;
+    --popup1-btn1-w:    20.45%;
+    --popup1-btn1-h:    36%;
+
+    --popup1-btn2-left: 39.78%;
+    --popup1-btn2-top:  32%;
+    --popup1-btn2-w:    20.45%;
+    --popup1-btn2-h:    36%;
+
+    --popup1-btn3-left: 72.55%;
+    --popup1-btn3-top:  32%;
+    --popup1-btn3-w:    20.45%;
+    --popup1-btn3-h:    36%;
+
     --bg:#000; --fg:#fff;
   }
 
@@ -191,6 +211,13 @@
 
   .popup.show{
     display:block;
+  }
+
+
+  .popup-inner-circle{
+    position:absolute;
+    z-index:60;
+    border-radius:999px !important;
   }
 
   .popup::after{
@@ -268,8 +295,23 @@
       <!-- 第四个圆形按钮对应弹框 -->
       <div class="popup" id="popup4" data-label="POPUP4"></div>
 
-      <!-- 第一层弹框：只保留空弹框，不放 KAIXA 的功能图标 -->
-      <div class="popup" id="popup1" data-label="POPUP1"></div>
+      <!-- 第一层弹框：加入三个独立圆形按钮 -->
+      <div class="popup" id="popup1" data-label="POPUP1">
+        <button class="hit circle popup-inner-circle"
+                id="popup1Btn1"
+                type="button"
+                aria-label="POPUP1-BTN1"></button>
+
+        <button class="hit circle popup-inner-circle"
+                id="popup1Btn2"
+                type="button"
+                aria-label="POPUP1-BTN2"></button>
+
+        <button class="hit circle popup-inner-circle"
+                id="popup1Btn3"
+                type="button"
+                aria-label="POPUP1-BTN3"></button>
+      </div>
 
       <!-- ENTER -->
       <button class="hit" id="btnEnter" aria-label="ENTER"></button>
@@ -316,7 +358,10 @@
     release:   'assets/release',
     combo3821: 'assets/3821',
     weaponHit: 'assets/weaponHit',
-    faizSeed:  'assets/faiz-seed'
+    faizSeed:  'assets/faiz-seed',
+    seedEnd:   'assets/seed-end',
+    startup:   'assets/startup',
+    seeding:   'assets/seeding'
   };
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
   const urlMap = {};
@@ -362,12 +407,23 @@
    */
   let faizSeedUnlocked=false;
   let faizSeedActive=false;
+  let faizSeedLoading=false;
 
   /*
-   * 结束音效文件名尚未确定。
-   * 确定后在 BASE 中增加资源，并把这里改为对应键名。
+   * seeding 强制循环状态：
+   * 不依赖 AudioBufferSourceNode.loop，
+   * 每次播放结束后由代码立即播放下一遍。
    */
-  const FAIZ_SEED_END_KEY=null;
+  let seedingNode=null;
+  let seedingLoopActive=false;
+
+  /*
+   * complete 的结束状态采用 onended + 音频时长定时器双保险。
+   * 避免声音听起来结束了，但浏览器回调仍未执行。
+   */
+  let completeNode=null;
+  let completeTimer=null;
+  let completeDone=false;
 
   let ringNode=null;
   let standNode=null;
@@ -425,6 +481,113 @@
     standByEndAt=0;
     standByPlaying=false;
     armed=false;
+  }
+
+
+  function clearCompleteTimer(){
+    if(completeTimer){
+      clearTimeout(completeTimer);
+      completeTimer=null;
+    }
+  }
+
+  function finishComplete(){
+    if(completeDone) return;
+    completeDone=true;
+
+    clearCompleteTimer();
+    completeNode=null;
+
+    transformed=true;
+    readyArmed=false;
+
+    /*
+     * complete 确认播放结束后，才解锁 TOP1。
+     */
+    faizSeedUnlocked=true;
+    faizSeedActive=false;
+    faizSeedLoading=false;
+
+    stopSeeding();
+    closeSeedPopup();
+
+    resetStandBy();
+    buf='';
+  }
+
+  function resetCompleteState(){
+    clearCompleteTimer();
+
+    if(completeNode){
+      completeNode.onended=null;
+      stop(completeNode);
+      completeNode=null;
+    }
+
+    completeDone=false;
+  }
+
+
+  async function ensureSoundLoaded(key){
+    if(buffers.has(key)) return true;
+
+    try{
+      const loaded=await load(key);
+      return !!loaded;
+    }catch(error){
+      console.error(`${key} 音效加载失败：`,error);
+      return false;
+    }
+  }
+
+  function stopSeeding(){
+    /*
+     * 先关闭循环开关，再停止当前音频。
+     * 这样 onended 即使稍后触发，也不会重新播放。
+     */
+    seedingLoopActive=false;
+
+    if(!seedingNode) return;
+
+    seedingNode.onended=null;
+    stop(seedingNode);
+    seedingNode=null;
+  }
+
+  function playNextSeedingLoop(){
+    if(!seedingLoopActive) return;
+
+    const node=play('seeding');
+
+    if(!node){
+      console.warn('seeding 无法播放');
+      seedingLoopActive=false;
+      seedingNode=null;
+      return;
+    }
+
+    seedingNode=node;
+
+    node.onended=()=>{
+      /*
+       * 只清理当前这一段，避免旧节点覆盖新节点引用。
+       */
+      if(seedingNode===node){
+        seedingNode=null;
+      }
+
+      /*
+       * 只要 TOP1 尚未结束 Seed 模式，
+       * 就立即播放下一遍 seeding。
+       */
+      if(seedingLoopActive){
+        playNextSeedingLoop();
+      }
+    };
+  }
+
+  function closeSeedPopup(){
+    document.getElementById('popup1').classList.remove('show');
   }
 
   async function ensureReady(){
@@ -543,23 +706,36 @@
      */
     if(standByPlaying || armed){
       resetStandBy();
+      resetCompleteState();
 
-      const s=play('complete');
+      /*
+       * complete 开始播放时先锁住 TOP1。
+       */
+      faizSeedUnlocked=false;
+      faizSeedActive=false;
 
-      const done=()=>{
-        transformed=true;
-        readyArmed=false;
+      completeNode=play('complete');
+      const completeBuffer=buffers.get('complete');
 
-        /* complete 播放结束后，才允许 TOP1 触发 faiz-seed */
-        faizSeedUnlocked=true;
-        faizSeedActive=false;
+      if(completeNode){
+        completeNode.onended=finishComplete;
 
-        resetStandBy();
-        buf='';
-      };
-
-      if(s) s.onended=done;
-      else setTimeout(done,380);
+        /*
+         * iOS/PWA 兜底：
+         * 即使 onended 延迟，也按真实音频时长完成解锁。
+         */
+        if(completeBuffer){
+          completeTimer=setTimeout(
+            finishComplete,
+            Math.ceil((completeBuffer.duration+0.08)*1000)
+          );
+        }
+      }else{
+        /*
+         * complete 未加载时，避免状态永久卡住。
+         */
+        completeTimer=setTimeout(finishComplete,380);
+      }
 
       return;
     }
@@ -654,6 +830,11 @@
       /* 解除变身后，TOP1 Seed 状态重新锁定 */
       faizSeedUnlocked=false;
       faizSeedActive=false;
+      faizSeedLoading=false;
+
+      stopSeeding();
+      closeSeedPopup();
+      resetCompleteState();
 
       buf='';
     };
@@ -663,41 +844,135 @@
   }
 
   /*
-   * FAIZ Seed 的结束音效预留函数。
-   * 目前音效名未确定，所以不会请求不存在的文件。
+   * TOP1 Seed 模式：
+   *
+   * 变身完成后第一次按 TOP1：
+   * - 播放 faiz-seed
+   * - 打开 popup1
+   *
+   * Seed 模式中再次按 TOP1：
+   * - 若 seeding 正在播放，立即停止
+   * - 播放 seed-end
+   * - 关闭 popup1
    */
-  function playFaizSeedEnd(){
-    if(!FAIZ_SEED_END_KEY) return;
-    play(FAIZ_SEED_END_KEY);
-  }
-
-  /*
-   * TOP1：
-   * 1. 保留原来的弹框开关。
-   * 2. complete 播放结束前，不触发 Seed 音效。
-   * 3. complete 播放结束后，第一次点击播放 faiz-seed。
-   * 4. 再点击一次，进入预留的结束音效分支。
-   */
-  function onTop1(){
-    const popup1=document.getElementById('popup1');
-    const popup4=document.getElementById('popup4');
-
-    popup4.classList.remove('show');
-    popup1.classList.toggle('show');
-
+  async function onTop1(){
     if(!audioReady) return;
     if(!faizSeedUnlocked) return;
+    if(faizSeedLoading) return;
 
     interruptRing();
 
+    const popup1=document.getElementById('popup1');
+    const popup4=document.getElementById('popup4');
+
+    /*
+     * 第一次按 TOP1：开启 Seed 模式。
+     */
     if(!faizSeedActive){
-      play('faizSeed');
-      faizSeedActive=true;
+      faizSeedLoading=true;
+
+      try{
+        const loaded=await ensureSoundLoaded('faizSeed');
+
+        if(!loaded){
+          console.warn('未找到 assets/faiz-seed.m4a');
+          return;
+        }
+
+        const seedNode=play('faizSeed');
+
+        if(!seedNode){
+          console.warn('faiz-seed 无法播放');
+          return;
+        }
+
+        popup4.classList.remove('show');
+        popup1.classList.add('show');
+        faizSeedActive=true;
+      }finally{
+        faizSeedLoading=false;
+      }
+
       return;
     }
 
-    playFaizSeedEnd();
+    /*
+     * 再按 TOP1：结束 Seed 模式。
+     */
+    stopSeeding();
+
+    const loaded=await ensureSoundLoaded('seedEnd');
+
+    if(loaded){
+      const endNode=play('seedEnd');
+
+      if(!endNode){
+        console.warn('seed-end 无法播放');
+      }
+    }else{
+      console.warn('未找到 assets/seed-end.m4a');
+    }
+
+    popup1.classList.remove('show');
     faizSeedActive=false;
+  }
+
+  /*
+   * popup1 左侧第一个按钮：播放 startup。
+   */
+  async function onPopup1Startup(event){
+    event.stopPropagation();
+
+    if(!audioReady) return;
+    if(!faizSeedUnlocked || !faizSeedActive) return;
+
+    interruptRing();
+
+    const loaded=await ensureSoundLoaded('startup');
+
+    if(!loaded){
+      console.warn('未找到 assets/startup.m4a');
+      return;
+    }
+
+    const node=play('startup');
+
+    if(!node){
+      console.warn('startup 无法播放');
+    }
+  }
+
+  /*
+   * popup1 第二个按钮：开始强制循环播放 seeding。
+   *
+   * 循环开始后，再按第二个按钮不会停止，
+   * 也不会从头重新开始。
+   *
+   * 只有按 TOP1 结束 Seed 模式，
+   * 才会调用 stopSeeding() 停止循环。
+   */
+  async function onPopup1Seeding(event){
+    event.stopPropagation();
+
+    if(!audioReady) return;
+    if(!faizSeedUnlocked || !faizSeedActive) return;
+
+    interruptRing();
+
+    /*
+     * 已经在循环时，忽略重复点击。
+     */
+    if(seedingLoopActive) return;
+
+    const loaded=await ensureSoundLoaded('seeding');
+
+    if(!loaded){
+      console.warn('未找到 assets/seeding.m4a');
+      return;
+    }
+
+    seedingLoopActive=true;
+    playNextSeedingLoop();
   }
 
   /* 第四个圆形按钮：打开/关闭第二个弹框 */
@@ -724,6 +999,21 @@
   document.getElementById('btnTop2').addEventListener('click', onTop2Ready);
   document.getElementById('btnTop3').addEventListener('click', onTop2Ready);
   document.getElementById('btnTop4').addEventListener('click', togglePopup4);
+
+
+  document.getElementById('popup1Btn1')
+    .addEventListener('click', onPopup1Startup);
+
+  document.getElementById('popup1Btn2')
+    .addEventListener('click', onPopup1Seeding);
+
+  /*
+   * 第三个按钮暂时保留，不绑定功能。
+   */
+  document.getElementById('popup1Btn3')
+    .addEventListener('click',(event)=>{
+      event.stopPropagation();
+    });
 
   document.querySelectorAll('.hit[data-k]').forEach(b=>{
     const k=b.dataset.k;
@@ -789,6 +1079,31 @@
       pct('--popup1-top'),
       pct('--popup1-w'),
       pct('--popup1-h')
+    );
+
+
+    setPct(
+      document.getElementById('popup1Btn1'),
+      '--popup1-btn1-left',
+      '--popup1-btn1-top',
+      '--popup1-btn1-w',
+      '--popup1-btn1-h'
+    );
+
+    setPct(
+      document.getElementById('popup1Btn2'),
+      '--popup1-btn2-left',
+      '--popup1-btn2-top',
+      '--popup1-btn2-w',
+      '--popup1-btn2-h'
+    );
+
+    setPct(
+      document.getElementById('popup1Btn3'),
+      '--popup1-btn3-left',
+      '--popup1-btn3-top',
+      '--popup1-btn3-w',
+      '--popup1-btn3-h'
     );
 
 
