@@ -177,6 +177,16 @@
     --popup1-btn3-w:    20.45%;
     --popup1-btn3-h:    36%;
 
+
+    /*
+     * 界面中间左侧 FIRE 按钮
+     * 可独立调整位置与大小
+     */
+    --mode-fire-left: 5%;
+    --mode-fire-top:  43%;
+    --mode-fire-w:    18%;
+    --mode-fire-h:    8%;
+
     --bg:#000; --fg:#fff;
   }
 
@@ -313,6 +323,12 @@
                 aria-label="POPUP1-BTN3"></button>
       </div>
 
+      <!-- 中间左侧：106/103 模式共用 FIRE 按钮 -->
+      <button class="hit circle"
+              id="btnModeFire"
+              type="button"
+              aria-label="MODE-FIRE"></button>
+
       <!-- ENTER -->
       <button class="hit" id="btnEnter" aria-label="ENTER"></button>
 
@@ -360,8 +376,12 @@
     weaponHit: 'assets/weaponHit',
     faizSeed:  'assets/faiz-seed',
     seedEnd:   'assets/seed-end',
-    startup:   'assets/startup',
-    seeding:   'assets/seeding'
+    startup:        'assets/startup',
+    seeding:        'assets/seeding',
+    burstMode:      'assets/burst_mode',
+    sigleMode:      'assets/sigle_mode',
+    burstModeFire:  'assets/burst_mode-fire',
+    sigleModeFire:  'assets/sigle_mode_fire'
   };
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
   const urlMap = {};
@@ -398,6 +418,18 @@
   let standByEndAt=0;
   let standByTimer=null;
   let readyArmed=false;
+
+  /*
+   * 106 / 103 模式共用 FIRE 按钮状态。
+   * modeFireType:
+   * - null：未解锁
+   * - burst：106 模式
+   * - sigle：103 模式
+   */
+  let modeFireType=null;
+  let modeFireShots=0;
+  const MODE_FIRE_MAX_SHOTS=3;
+
 
   /*
    * TOP1 的 FAIZ Seed 状态：
@@ -629,16 +661,24 @@
     play('openPhone');
   }
 
-  function playSequence(keys){
+  function playSequence(keys,onDone=null){
     const queue=[...keys];
+
+    const finish=()=>{
+      if(typeof onDone==='function'){
+        onDone();
+      }
+    };
 
     const next=()=>{
       const key=queue.shift();
-      if(!key) return;
+
+      if(!key){
+        finish();
+        return;
+      }
 
       const node=play(key);
-
-      if(queue.length===0) return;
 
       if(node){
         node.onended=next;
@@ -648,6 +688,42 @@
     };
 
     next();
+  }
+
+  function resetModeFire(){
+    modeFireType=null;
+    modeFireShots=0;
+  }
+
+  function armModeFire(type){
+    modeFireType=type;
+    modeFireShots=0;
+  }
+
+  function onModeFire(){
+    if(!audioReady) return;
+    if(!modeFireType) return;
+    if(modeFireShots>=MODE_FIRE_MAX_SHOTS) return;
+
+    interruptRing();
+
+    if(modeFireType==='burst'){
+      play('burstModeFire');
+    }else if(modeFireType==='sigle'){
+      play('sigleModeFire');
+    }else{
+      return;
+    }
+
+    modeFireShots+=1;
+
+    /*
+     * 第三次点击完成后立即锁定。
+     * 必须重新输入 106 或 103 并完成模式音效后才能再次使用。
+     */
+    if(modeFireShots>=MODE_FIRE_MAX_SHOTS){
+      modeFireType=null;
+    }
   }
 
   function pressDigit(k){
@@ -740,6 +816,32 @@
       return;
     }
 
+    /*
+     * 106 / 103 使用完整顺序：
+     * enter 播放完后再播放对应模式音效。
+     */
+    if(buf==='106'){
+      resetModeFire();
+
+      playSequence(['enter','burstMode'],()=>{
+        armModeFire('burst');
+      });
+
+      buf='';
+      return;
+    }
+
+    if(buf==='103'){
+      resetModeFire();
+
+      playSequence(['enter','sigleMode'],()=>{
+        armModeFire('sigle');
+      });
+
+      buf='';
+      return;
+    }
+
     play('enter');
 
     if(buf==='555'){
@@ -772,9 +874,6 @@
       return;
     }
 
-    if(buf==='106'||buf==='103'){
-      return;
-    }
 
     if(buf.length===3 && buf!=='3821'){
       play('error');
@@ -835,6 +934,7 @@
       stopSeeding();
       closeSeedPopup();
       resetCompleteState();
+      resetModeFire();
 
       buf='';
     };
@@ -1022,6 +1122,7 @@
   });
   document.getElementById('btnOpenPhone').addEventListener('click', onOpenPhone);
   document.getElementById('btnEnter').addEventListener('click', onEnter);
+  document.getElementById('btnModeFire').addEventListener('click', onModeFire);
   document.getElementById('btnRing').addEventListener('click', ringStart);
   document.getElementById('btnStop').addEventListener('click', ringStop);
   document.getElementById('btnClear').addEventListener('click', onClear);
@@ -1114,6 +1215,15 @@
       pct('--popup4-w'),
       pct('--popup4-h')
     );
+    const modeFire = document.getElementById('btnModeFire');
+    setPct(
+      modeFire,
+      '--mode-fire-left',
+      '--mode-fire-top',
+      '--mode-fire-w',
+      '--mode-fire-h'
+    );
+
     const enter = document.getElementById('btnEnter');
     setPct(enter, '--enter-left','--enter-top','--enter-w','--enter-h');
 
