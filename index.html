@@ -315,7 +315,8 @@
     exceed:    'assets/exceed charge',
     release:   'assets/release',
     combo3821: 'assets/3821',
-    weaponHit: 'assets/weaponHit'
+    weaponHit: 'assets/weaponHit',
+    faizSeed:  'assets/faiz-seed'
   };
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
   const urlMap = {};
@@ -352,6 +353,22 @@
   let standByEndAt=0;
   let standByTimer=null;
   let readyArmed=false;
+
+  /*
+   * TOP1 的 FAIZ Seed 状态：
+   * complete 播放结束后解锁。
+   * 第一次点击播放 faiz-seed。
+   * 第二次点击进入预留的结束音效分支。
+   */
+  let faizSeedUnlocked=false;
+  let faizSeedActive=false;
+
+  /*
+   * 结束音效文件名尚未确定。
+   * 确定后在 BASE 中增加资源，并把这里改为对应键名。
+   */
+  const FAIZ_SEED_END_KEY=null;
+
   let ringNode=null;
   let standNode=null;
 
@@ -532,6 +549,11 @@
       const done=()=>{
         transformed=true;
         readyArmed=false;
+
+        /* complete 播放结束后，才允许 TOP1 触发 faiz-seed */
+        faizSeedUnlocked=true;
+        faizSeedActive=false;
+
         resetStandBy();
         buf='';
       };
@@ -628,6 +650,11 @@
       transformed=false;
       resetStandBy();
       readyArmed=false;
+
+      /* 解除变身后，TOP1 Seed 状态重新锁定 */
+      faizSeedUnlocked=false;
+      faizSeedActive=false;
+
       buf='';
     };
 
@@ -635,13 +662,42 @@
     else done();
   }
 
-  /* 第一个圆形按钮：打开/关闭第一个弹框 */
-  function togglePopup1(){
+  /*
+   * FAIZ Seed 的结束音效预留函数。
+   * 目前音效名未确定，所以不会请求不存在的文件。
+   */
+  function playFaizSeedEnd(){
+    if(!FAIZ_SEED_END_KEY) return;
+    play(FAIZ_SEED_END_KEY);
+  }
+
+  /*
+   * TOP1：
+   * 1. 保留原来的弹框开关。
+   * 2. complete 播放结束前，不触发 Seed 音效。
+   * 3. complete 播放结束后，第一次点击播放 faiz-seed。
+   * 4. 再点击一次，进入预留的结束音效分支。
+   */
+  function onTop1(){
     const popup1=document.getElementById('popup1');
     const popup4=document.getElementById('popup4');
 
     popup4.classList.remove('show');
     popup1.classList.toggle('show');
+
+    if(!audioReady) return;
+    if(!faizSeedUnlocked) return;
+
+    interruptRing();
+
+    if(!faizSeedActive){
+      play('faizSeed');
+      faizSeedActive=true;
+      return;
+    }
+
+    playFaizSeedEnd();
+    faizSeedActive=false;
   }
 
   /* 第四个圆形按钮：打开/关闭第二个弹框 */
@@ -664,7 +720,7 @@
   }
 
   /* ------------ 绑定 ------------ */
-  document.getElementById('btnTop1').addEventListener('click', togglePopup1);
+  document.getElementById('btnTop1').addEventListener('click', onTop1);
   document.getElementById('btnTop2').addEventListener('click', onTop2Ready);
   document.getElementById('btnTop3').addEventListener('click', onTop2Ready);
   document.getElementById('btnTop4').addEventListener('click', togglePopup4);
