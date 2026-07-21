@@ -243,6 +243,14 @@
 
   /* ===== 调试描边：对齐OK后，把这两段注释掉即可 ===== */
   .hit{ background:rgba(255,0,0,.22); border:1.5px dashed #00ffff; border-radius:8px; }
+
+  /*
+   * MODE FIRE 按钮固定为方形/矩形。
+   * 宽高仍由 --mode-fire-w / --mode-fire-h 独立控制。
+   */
+  .hit.mode-fire-square{
+    border-radius:0 !important;
+  }
   .hit::after{
     content: attr(aria-label);
     position:absolute; left:4px; top:2px; font: 600 10px/1 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
@@ -324,7 +332,7 @@
       </div>
 
       <!-- 中间左侧：106/103 模式共用 FIRE 按钮 -->
-      <button class="hit circle"
+      <button class="hit mode-fire-square"
               id="btnModeFire"
               type="button"
               aria-label="MODE-FIRE"></button>
@@ -378,14 +386,10 @@
     seedEnd:   'assets/seed-end',
     startup:        'assets/startup',
     seeding:        'assets/seeding',
-    burstMode:                'assets/burst_mode',
-    burstModeFallbackDash:    'assets/burst-mode',
-    sigleMode:                'assets/sigle_mode',
-    singleModeFallback:       'assets/single_mode',
-    burstModeFire:            'assets/burst_mode-fire',
-    burstModeFireFallback:    'assets/burst_mode_fire',
-    sigleModeFire:            'assets/sigle_mode_fire',
-    singleModeFireFallback:   'assets/single_mode_fire'
+    burstMode:      'assets/burst_mode',
+    sigleMode:      'assets/sigle_mode',
+    burstModeFire:  'assets/burst_mode-fire',
+    sigleModeFire:  'assets/sigle_mode_fire'
   };
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
   const urlMap = {};
@@ -798,8 +802,8 @@
       if(!modeKey){
         console.warn(
           type==='burst'
-            ? '未找到 assets/burst_mode.m4a 或 assets/burst-mode.m4a'
-            : '未找到 assets/sigle_mode.m4a 或 assets/single_mode.m4a'
+            ? '未找到 assets/burst_mode.m4a'
+            : '未找到 assets/sigle_mode.m4a'
         );
         return;
       }
@@ -823,6 +827,38 @@
     }
   }
 
+  function handleModeCode(){
+    if(buf==='106'){
+      /*
+       * 106：enter → burst_mode。
+       * 显式号码优先于变身后的普通 ENTER / ready 逻辑。
+       */
+      readyArmed=false;
+      startModeSequence('burst',[
+        'burstMode'
+      ]);
+
+      buf='';
+      return true;
+    }
+
+    if(buf==='103'){
+      /*
+       * 103：enter → sigle_mode。
+       * 文件名按用户确认的 sigle_mode 保留。
+       */
+      readyArmed=false;
+      startModeSequence('sigle',[
+        'sigleMode'
+      ]);
+
+      buf='';
+      return true;
+    }
+
+    return false;
+  }
+
   async function onModeFire(){
     if(!audioReady) return;
     if(!modeFireType) return;
@@ -834,13 +870,11 @@
 
     if(modeFireType==='burst'){
       fireKey=await ensureFirstAvailable([
-        'burstModeFire',
-        'burstModeFireFallback'
+        'burstModeFire'
       ]);
     }else if(modeFireType==='sigle'){
       fireKey=await ensureFirstAvailable([
-        'sigleModeFire',
-        'singleModeFireFallback'
+        'sigleModeFire'
       ]);
     }else{
       return;
@@ -852,8 +886,8 @@
     if(!fireKey){
       console.warn(
         modeFireType==='burst'
-          ? '未找到 assets/burst_mode-fire.m4a 或 assets/burst_mode_fire.m4a'
-          : '未找到 assets/sigle_mode_fire.m4a 或 assets/single_mode_fire.m4a'
+          ? '未找到 assets/burst_mode-fire.m4a'
+          : '未找到 assets/sigle_mode_fire.m4a'
       );
       return;
     }
@@ -900,6 +934,17 @@
     if(!audioReady) return;
 
     interruptRing();
+
+    /*
+     * 106 / 103 必须先判断。
+     *
+     * 原来的错误：
+     * transformed=true 时，代码先进入普通 ENTER 分支并 return，
+     * 所以只播放 enter，永远执行不到 burst_mode / sigle_mode。
+     */
+    if(handleModeCode()){
+      return;
+    }
 
     /*
      * 变身后新规则：
@@ -963,37 +1008,6 @@
         completeTimer=setTimeout(finishComplete,380);
       }
 
-      return;
-    }
-
-    /*
-     * 106 / 103 使用完整顺序：
-     * enter 播放完后再播放对应模式音效。
-     */
-    if(buf==='106'){
-      /*
-       * 优先 burst_mode，同时兼容 burst-mode。
-       */
-      startModeSequence('burst',[
-        'burstMode',
-        'burstModeFallbackDash'
-      ]);
-
-      buf='';
-      return;
-    }
-
-    if(buf==='103'){
-      /*
-       * 优先使用用户指定的 sigle_mode，
-       * 若文件实际采用 single_mode 拼写则自动兼容。
-       */
-      startModeSequence('sigle',[
-        'sigleMode',
-        'singleModeFallback'
-      ]);
-
-      buf='';
       return;
     }
 
