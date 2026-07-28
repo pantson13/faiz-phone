@@ -1196,11 +1196,11 @@
 
     /*
      * * 按钮正确音效：
-     * 未变身播放 qj；
-     * 变身后播放 weaponHit。
+     * 未变身播放 key1；
+     * 变身后播放 qj。
      */
-    if(transformed) play('weaponHit');
-    else play('qj');
+    if(transformed) play('qj');
+    else play('key1');
 
     buf=(buf+'*').slice(-3);
   }
@@ -1217,6 +1217,11 @@
 
     interruptRing();
 
+    /*
+     * # 按钮保持原有逻辑：
+     * 未变身播放 qj；
+     * 变身后播放 weaponHit。
+     */
     if(transformed) play('weaponHit');
     else play('qj');
 
