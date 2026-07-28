@@ -300,7 +300,7 @@
       <!-- TOP1B：变身后播放 s-ready，并进入 ENTER 待触发状态 -->
       <button class="hit circle" id="btnTop1B" aria-label="TOP1-B"></button>
 
-      <!-- 顶部第二个圆形按钮：变身后播放 READY -->
+      <!-- TOP2：短按 ready；长按 1 秒 ready-metal -->
       <button class="hit circle" id="btnTop2" aria-label="TOP2"></button>
 
 
@@ -378,9 +378,10 @@
     standBy:   'assets/stand by',
     complete:  'assets/complete',
     error:     'assets/error',
-    ready:     'assets/ready',
-    sReady:    'assets/s-ready',
-    exceed:    'assets/exceed charge',
+    ready:      'assets/ready',
+    readyMetal: 'assets/ready-metal',
+    sReady:     'assets/s-ready',
+    exceed:     'assets/exceed charge',
     exceed2:   'assets/exceed charge2',
     release:   'assets/release',
     combo3821: 'assets/3821',
@@ -494,6 +495,16 @@
   let enterPressTimer=null;
   let enterPressPointerId=null;
   let enterLongPressTriggered=false;
+
+  /*
+   * TOP2 长按分支：
+   * 短按播放 ready；
+   * 长按满 1 秒只播放 ready-metal，不播放 ready。
+   */
+  const TOP2_LONG_PRESS_MS=1000;
+  let top2PressTimer=null;
+  let top2PressPointerId=null;
+  let top2LongPressTriggered=false;
 
   /*
    * 106 / 103 模式共用 FIRE 按钮状态。
@@ -1410,7 +1421,10 @@
     readyArmed=true;
   }
 
-  /* 第二、第三个圆形按钮：仅在 FAIZ 变身后播放 ready */
+  /*
+   * TOP2 短按：
+   * 播放 ready，并进入 ENTER 待触发状态。
+   */
   function onTop2Ready(){
     if(!audioReady) return;
     if(!transformed) return;
@@ -1420,11 +1434,143 @@
     readyArmed=true;
   }
 
+  /*
+   * TOP2 长按：
+   * 播放 ready-metal，并进入同一个 ENTER 待触发状态。
+   * 不会播放 ready。
+   */
+  async function onTop2ReadyMetal(){
+    if(!audioReady) return;
+    if(!transformed) return;
+
+    interruptRing();
+
+    const loaded=await ensureSoundLoaded('readyMetal');
+
+    if(!loaded){
+      console.warn('未找到 assets/ready-metal.m4a');
+      return;
+    }
+
+    const node=play('readyMetal');
+
+    if(!node){
+      console.warn('ready-metal 无法播放');
+      return;
+    }
+
+    readyArmed=true;
+  }
+
+  function clearTop2PressTimer(){
+    if(top2PressTimer){
+      clearTimeout(top2PressTimer);
+      top2PressTimer=null;
+    }
+  }
+
+  function onTop2PointerDown(event){
+    if(event.pointerType==='mouse' && event.button!==0) return;
+    if(top2PressPointerId!==null) return;
+
+    top2PressPointerId=event.pointerId;
+    top2LongPressTriggered=false;
+
+    try{
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }catch{}
+
+    /*
+     * 未变身时不建立长按触发。
+     * 松手后短按函数也会自行拒绝执行。
+     */
+    if(!audioReady || !transformed) return;
+
+    clearTop2PressTimer();
+
+    top2PressTimer=setTimeout(()=>{
+      top2PressTimer=null;
+
+      if(top2PressPointerId!==event.pointerId) return;
+      if(!audioReady || !transformed) return;
+
+      top2LongPressTriggered=true;
+      onTop2ReadyMetal();
+    },TOP2_LONG_PRESS_MS);
+  }
+
+  function finishTop2Pointer(event,{cancelled=false}={}){
+    if(top2PressPointerId!==event.pointerId) return;
+
+    clearTop2PressTimer();
+
+    const wasLongPress=top2LongPressTriggered;
+
+    top2PressPointerId=null;
+    top2LongPressTriggered=false;
+
+    try{
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }catch{}
+
+    /*
+     * 未达到 1 秒时执行原短按 ready。
+     * 已触发长按时，松手不再补一次 ready。
+     */
+    if(!cancelled && !wasLongPress){
+      onTop2Ready();
+    }
+  }
+
+  function onTop2PointerUp(event){
+    event.preventDefault();
+    finishTop2Pointer(event);
+  }
+
+  function onTop2PointerCancel(event){
+    finishTop2Pointer(event,{cancelled:true});
+  }
+
+  /*
+   * TOP3 保持原来的普通 ready 逻辑。
+   */
+  function onTop3Ready(){
+    onTop2Ready();
+  }
+
   /* ------------ 绑定 ------------ */
   document.getElementById('btnTop1').addEventListener('click', onTop1);
   document.getElementById('btnTop1B').addEventListener('click', onTop1BReady);
-  document.getElementById('btnTop2').addEventListener('click', onTop2Ready);
-  document.getElementById('btnTop3').addEventListener('click', onTop2Ready);
+
+  const top2Button=document.getElementById('btnTop2');
+
+  top2Button.addEventListener('pointerdown',onTop2PointerDown);
+  top2Button.addEventListener('pointerup',onTop2PointerUp);
+  top2Button.addEventListener('pointercancel',onTop2PointerCancel);
+
+  top2Button.addEventListener('lostpointercapture',()=>{
+    clearTop2PressTimer();
+    top2PressPointerId=null;
+    top2LongPressTriggered=false;
+  });
+
+  top2Button.addEventListener('contextmenu',(event)=>{
+    event.preventDefault();
+  });
+
+  /*
+   * 鼠标和触摸由 pointer 事件处理。
+   * detail===0 保留键盘或脚本 click 的可用性。
+   */
+  top2Button.addEventListener('click',(event)=>{
+    if(event.detail===0){
+      onTop2Ready();
+    }else{
+      event.preventDefault();
+    }
+  });
+
+  document.getElementById('btnTop3').addEventListener('click', onTop3Ready);
   document.getElementById('btnTop4').addEventListener('click', togglePopup4);
 
 
