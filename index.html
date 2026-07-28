@@ -297,7 +297,7 @@
       <button class="hit circle" id="btnTop1" aria-label="TOP1"></button>
 
 
-      <!-- TOP1 正下方新增圆形按钮：暂未绑定交互 -->
+      <!-- TOP1B：变身后播放 s-ready，并进入 ENTER 待触发状态 -->
       <button class="hit circle" id="btnTop1B" aria-label="TOP1-B"></button>
 
       <!-- 顶部第二个圆形按钮：变身后播放 READY -->
@@ -379,6 +379,7 @@
     complete:  'assets/complete',
     error:     'assets/error',
     ready:     'assets/ready',
+    sReady:    'assets/s-ready',
     exceed:    'assets/exceed charge',
     exceed2:   'assets/exceed charge2',
     release:   'assets/release',
@@ -1396,6 +1397,19 @@
     popup4.classList.toggle('show');
   }
 
+  /*
+   * TOP1B：
+   * 交互逻辑与 TOP2 相同，但准备音效使用 s-ready。
+   */
+  function onTop1BReady(){
+    if(!audioReady) return;
+    if(!transformed) return;
+
+    interruptRing();
+    play('sReady');
+    readyArmed=true;
+  }
+
   /* 第二、第三个圆形按钮：仅在 FAIZ 变身后播放 ready */
   function onTop2Ready(){
     if(!audioReady) return;
@@ -1408,6 +1422,7 @@
 
   /* ------------ 绑定 ------------ */
   document.getElementById('btnTop1').addEventListener('click', onTop1);
+  document.getElementById('btnTop1B').addEventListener('click', onTop1BReady);
   document.getElementById('btnTop2').addEventListener('click', onTop2Ready);
   document.getElementById('btnTop3').addEventListener('click', onTop2Ready);
   document.getElementById('btnTop4').addEventListener('click', togglePopup4);
