@@ -182,10 +182,10 @@
      * 界面中间左侧 FIRE 按钮
      * 可独立调整位置与大小
      */
-    --mode-fire-left: 13%;
-    --mode-fire-top:  51%;
-    --mode-fire-w:    6%;
-    --mode-fire-h:    13%;
+    --mode-fire-left: 5%;
+    --mode-fire-top:  43%;
+    --mode-fire-w:    18%;
+    --mode-fire-h:    8%;
 
     --bg:#000; --fg:#fff;
   }
@@ -201,6 +201,7 @@
   .hit{
     position:absolute; border:none; outline:none; background:transparent;
     touch-action:manipulation; user-select:none; -webkit-user-select:none;
+    -webkit-touch-callout:none;
     transform-origin:center;
   }
   .hit:active{ transform:scale(.98); }
@@ -379,6 +380,7 @@
     error:     'assets/error',
     ready:     'assets/ready',
     exceed:    'assets/exceed charge',
+    exceed2:   'assets/exceed charge2',
     release:   'assets/release',
     combo3821: 'assets/3821',
     weaponHit: 'assets/weaponHit',
@@ -478,6 +480,17 @@
   let standByEndAt=0;
   let standByTimer=null;
   let readyArmed=false;
+
+  /*
+   * ENTER 长按分支：
+   * TOP2 / TOP3 已播放 ready 后，按住 ENTER 达到 1 秒，
+   * 播放 enter → exceed charge2，并阻止普通 exceed charge。
+   * 修改此数值即可调整长按时间。
+   */
+  const ENTER_LONG_PRESS_MS=1000;
+  let enterPressTimer=null;
+  let enterPressPointerId=null;
+  let enterLongPressTriggered=false;
 
   /*
    * 106 / 103 模式共用 FIRE 按钮状态。
@@ -930,6 +943,110 @@
     }
   }
 
+  function canTriggerEnterLongPress(){
+    /*
+     * 只在变身完成且 TOP2 / TOP3 已进入 ready 待触发状态时生效。
+     * 106 / 103 显式号码优先，避免长按把模式号码截走。
+     */
+    return (
+      audioReady &&
+      transformed &&
+      readyArmed &&
+      buf!=='106' &&
+      buf!=='103'
+    );
+  }
+
+  async function onEnterLongPress(){
+    if(!canTriggerEnterLongPress()) return;
+
+    interruptRing();
+
+    /*
+     * 先确认新音效真实存在，失败时保留 readyArmed，
+     * 用户仍可改用普通短按，不会白白消耗待触发状态。
+     */
+    const loaded=await ensureSoundLoaded('exceed2');
+
+    if(!loaded){
+      console.warn('未找到 assets/exceed charge2.m4a');
+      return;
+    }
+
+    readyArmed=false;
+
+    /*
+     * 长按分支只播放 enter → exceed charge2。
+     * 这里没有 exceed，因此不会触发 exceed charge。
+     */
+    playSequence(['enter','exceed2']);
+  }
+
+  function clearEnterPressTimer(){
+    if(enterPressTimer){
+      clearTimeout(enterPressTimer);
+      enterPressTimer=null;
+    }
+  }
+
+  function onEnterPointerDown(event){
+    if(event.pointerType==='mouse' && event.button!==0) return;
+    if(enterPressPointerId!==null) return;
+
+    enterPressPointerId=event.pointerId;
+    enterLongPressTriggered=false;
+
+    try{
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }catch{}
+
+    if(!canTriggerEnterLongPress()) return;
+
+    clearEnterPressTimer();
+
+    enterPressTimer=setTimeout(()=>{
+      enterPressTimer=null;
+
+      if(enterPressPointerId!==event.pointerId) return;
+      if(!canTriggerEnterLongPress()) return;
+
+      enterLongPressTriggered=true;
+      onEnterLongPress();
+    },ENTER_LONG_PRESS_MS);
+  }
+
+  function finishEnterPointer(event,{cancelled=false}={}){
+    if(enterPressPointerId!==event.pointerId) return;
+
+    clearEnterPressTimer();
+
+    const wasLongPress=enterLongPressTriggered;
+
+    enterPressPointerId=null;
+    enterLongPressTriggered=false;
+
+    try{
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }catch{}
+
+    /*
+     * 未达到 1 秒时执行原来的短按逻辑。
+     * 已触发长按时，松手不再补一次普通 ENTER。
+     */
+    if(!cancelled && !wasLongPress){
+      onEnter();
+    }
+  }
+
+  function onEnterPointerUp(event){
+    event.preventDefault();
+    finishEnterPointer(event);
+  }
+
+  function onEnterPointerCancel(event){
+    finishEnterPointer(event,{cancelled:true});
+  }
+
   function onEnter(){
     if(!audioReady) return;
 
@@ -1290,7 +1407,33 @@
     else        b.addEventListener('click', ()=>pressDigit(k));
   });
   document.getElementById('btnOpenPhone').addEventListener('click', onOpenPhone);
-  document.getElementById('btnEnter').addEventListener('click', onEnter);
+
+  const enterButton=document.getElementById('btnEnter');
+
+  enterButton.addEventListener('pointerdown',onEnterPointerDown);
+  enterButton.addEventListener('pointerup',onEnterPointerUp);
+  enterButton.addEventListener('pointercancel',onEnterPointerCancel);
+  enterButton.addEventListener('lostpointercapture',()=>{
+    clearEnterPressTimer();
+    enterPressPointerId=null;
+    enterLongPressTriggered=false;
+  });
+  enterButton.addEventListener('contextmenu',(event)=>{
+    event.preventDefault();
+  });
+
+  /*
+   * 鼠标/触摸已经由 pointer 事件处理。
+   * detail===0 用于键盘 ENTER、空格键或脚本触发 click。
+   */
+  enterButton.addEventListener('click',(event)=>{
+    if(event.detail===0){
+      onEnter();
+    }else{
+      event.preventDefault();
+    }
+  });
+
   document.getElementById('btnModeFire').addEventListener('click', onModeFire);
   document.getElementById('btnRing').addEventListener('click', ringStart);
   document.getElementById('btnStop').addEventListener('click', ringStop);
