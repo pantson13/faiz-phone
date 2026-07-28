@@ -384,6 +384,7 @@
     release:   'assets/release',
     combo3821: 'assets/3821',
     weaponHit: 'assets/weaponHit',
+    qj:        'assets/qj',
     faizSeed:  'assets/faiz-seed',
     seedEnd:   'assets/seed-end',
     startup:        'assets/startup',
@@ -1187,6 +1188,24 @@
     buf=(buf+'*').slice(-3);
   }
 
+  /*
+   * # 按钮：
+   * 交互结构与 * 相同。
+   *
+   * 未变身：播放 qj。
+   * 已变身：播放 weaponHit。
+   */
+  function onHash(){
+    if(!audioReady) return;
+
+    interruptRing();
+
+    if(transformed) play('weaponHit');
+    else play('qj');
+
+    buf=(buf+'#').slice(-3);
+  }
+
   function ringStart(){
     if(!audioReady) return;
 
@@ -1410,8 +1429,14 @@
 
   document.querySelectorAll('.hit[data-k]').forEach(b=>{
     const k=b.dataset.k;
-    if(k==='*') b.addEventListener('click', onStar);
-    else        b.addEventListener('click', ()=>pressDigit(k));
+
+    if(k==='*'){
+      b.addEventListener('click', onStar);
+    }else if(k==='#'){
+      b.addEventListener('click', onHash);
+    }else{
+      b.addEventListener('click', ()=>pressDigit(k));
+    }
   });
   document.getElementById('btnOpenPhone').addEventListener('click', onOpenPhone);
 
