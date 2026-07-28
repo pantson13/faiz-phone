@@ -1194,8 +1194,13 @@
 
     interruptRing();
 
+    /*
+     * * 按钮正确音效：
+     * 未变身播放 qj；
+     * 变身后播放 weaponHit。
+     */
     if(transformed) play('weaponHit');
-    else play('key1');
+    else play('qj');
 
     buf=(buf+'*').slice(-3);
   }
