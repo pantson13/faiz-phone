@@ -396,7 +396,9 @@
     burstMode:      'assets/burst_mode',
     sigleMode:      'assets/sigle_mode',
     burstModeFire:  'assets/burst_mode-fire',
-    sigleModeFire:  'assets/sigle_mode_fire'
+    sigleModeFire:  'assets/sigle_mode_fire',
+    peopleNoName:   'assets/The people with no name',
+    egoEyes:        'assets/EGO~eyes glazing over'
   };
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
   const urlMap = {};
@@ -475,6 +477,20 @@
   function play(key,{loop=false}={}){ const b=buffers.get(key); if(!b) return null; const s=ctx().createBufferSource(); s.buffer=b; s.loop=!!loop; s.connect(master); s.start(); return s; }
   function stop(n){ if(n&&n.stop){ try{n.stop();}catch{} } }
 
+  function playWithIndependentGain(key){
+    const b=buffers.get(key);
+    if(!b) return null;
+    const c=ctx();
+    const source=c.createBufferSource();
+    const gain=c.createGain();
+    source.buffer=b;
+    gain.gain.value=1;
+    source.connect(gain);
+    gain.connect(master);
+    source.start();
+    return {source,gain};
+  }
+
   /* ------------ 规则/状态 ------------ */
   const COMBOS=['555','106','103'];
 
@@ -530,6 +546,24 @@
   let hashPressTimer=null;
   let hashPressPointerId=null;
   let hashLongPressTriggered=false;
+
+  const MUSIC_LONG_PRESS_MS=500;
+  const MUSIC_FADE_OUT_MS=2000;
+
+  const musicButtons={
+    '0':{
+      key:'peopleNoName',
+      filename:'assets/The people with no name.m4a',
+      timer:null,pointerId:null,longTriggered:false,stopTriggered:false,
+      node:null,gain:null,fading:false
+    },
+    '7':{
+      key:'egoEyes',
+      filename:'assets/EGO~eyes glazing over.m4a',
+      timer:null,pointerId:null,longTriggered:false,stopTriggered:false,
+      node:null,gain:null,fading:false
+    }
+  };
 
 
   /*
@@ -974,6 +1008,155 @@
     if(modeFireShots>=MODE_FIRE_MAX_SHOTS){
       modeFireType=null;
     }
+  }
+
+  function clearMusicPressTimer(state){
+    if(state.timer){
+      clearTimeout(state.timer);
+      state.timer=null;
+    }
+  }
+
+  function clearMusicPlaybackState(state,source=null){
+    if(source && state.node!==source) return;
+    state.node=null;
+    state.gain=null;
+    state.fading=false;
+  }
+
+  async function startLongPressMusic(k){
+    const state=musicButtons[k];
+    if(!state || !audioReady || state.node || state.fading) return;
+
+    interruptRing();
+
+    const loaded=await ensureSoundLoaded(state.key);
+    if(!loaded){
+      console.warn(`未找到 ${state.filename}`);
+      return;
+    }
+    if(state.node || state.fading) return;
+
+    const playback=playWithIndependentGain(state.key);
+    if(!playback){
+      console.warn(`${state.key} 无法播放`);
+      return;
+    }
+
+    state.node=playback.source;
+    state.gain=playback.gain;
+    state.fading=false;
+
+    const source=playback.source;
+    source.onended=()=>{
+      clearMusicPlaybackState(state,source);
+    };
+  }
+
+  function fadeOutLongPressMusic(k){
+    const state=musicButtons[k];
+    if(!state || !state.node || !state.gain) return false;
+    if(state.fading) return true;
+
+    state.fading=true;
+    const source=state.node;
+    const gain=state.gain;
+    const c=ctx();
+    const now=c.currentTime;
+    const endAt=now+(MUSIC_FADE_OUT_MS/1000);
+
+    try{
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(Math.max(0.0001,gain.gain.value),now);
+      gain.gain.linearRampToValueAtTime(0.0001,endAt);
+    }catch{}
+
+    setTimeout(()=>{
+      if(state.node===source){
+        source.onended=null;
+        stop(source);
+        clearMusicPlaybackState(state,source);
+      }
+    },MUSIC_FADE_OUT_MS+80);
+
+    return true;
+  }
+
+  function onMusicButtonPointerDown(k,event){
+    const state=musicButtons[k];
+    if(!state) return;
+    if(event.pointerType==='mouse' && event.button!==0) return;
+    if(state.pointerId!==null) return;
+
+    state.pointerId=event.pointerId;
+    state.longTriggered=false;
+    state.stopTriggered=false;
+
+    try{ event.currentTarget.setPointerCapture(event.pointerId); }catch{}
+
+    if(state.node || state.fading){
+      state.stopTriggered=true;
+      fadeOutLongPressMusic(k);
+      return;
+    }
+
+    if(!audioReady) return;
+
+    clearMusicPressTimer(state);
+    state.timer=setTimeout(()=>{
+      state.timer=null;
+      if(state.pointerId!==event.pointerId) return;
+      if(state.node || state.fading) return;
+      state.longTriggered=true;
+      startLongPressMusic(k);
+    },MUSIC_LONG_PRESS_MS);
+  }
+
+  function finishMusicButtonPointer(k,event,{cancelled=false}={}){
+    const state=musicButtons[k];
+    if(!state || state.pointerId!==event.pointerId) return;
+
+    clearMusicPressTimer(state);
+    const handled=state.longTriggered || state.stopTriggered;
+
+    state.pointerId=null;
+    state.longTriggered=false;
+    state.stopTriggered=false;
+
+    try{ event.currentTarget.releasePointerCapture(event.pointerId); }catch{}
+
+    if(!cancelled && !handled){
+      pressDigit(k);
+    }
+  }
+
+  function bindLongPressMusicButton(id,k){
+    const button=document.getElementById(id);
+    const state=musicButtons[k];
+
+    button.addEventListener('pointerdown',(event)=>onMusicButtonPointerDown(k,event));
+    button.addEventListener('pointerup',(event)=>{
+      event.preventDefault();
+      finishMusicButtonPointer(k,event);
+    });
+    button.addEventListener('pointercancel',(event)=>{
+      finishMusicButtonPointer(k,event,{cancelled:true});
+    });
+    button.addEventListener('lostpointercapture',()=>{
+      clearMusicPressTimer(state);
+      state.pointerId=null;
+      state.longTriggered=false;
+      state.stopTriggered=false;
+    });
+    button.addEventListener('contextmenu',(event)=>event.preventDefault());
+    button.addEventListener('click',(event)=>{
+      if(event.detail===0){
+        if(state.node || state.fading) fadeOutLongPressMusic(k);
+        else pressDigit(k);
+      }else{
+        event.preventDefault();
+      }
+    });
   }
 
   function pressDigit(k){
@@ -1752,11 +1935,18 @@
       /*
        * # 由下方 pointer 事件单独处理短按与长按。
        */
+    }else if(k==='0' || k==='7'){
+      /*
+       * 0 / 7 由长按音乐逻辑单独处理。
+       */
     }else{
       b.addEventListener('click', ()=>pressDigit(k));
     }
   });
   document.getElementById('btnOpenPhone').addEventListener('click', onOpenPhone);
+
+  bindLongPressMusicButton('btnKey0','0');
+  bindLongPressMusicButton('btnKey7','7');
 
   const hashButton=document.getElementById('btnHash');
 

@@ -1,10 +1,12 @@
-const CACHE_NAME = "faiz-pwa-v33";
+const CACHE_NAME = "faiz-pwa-v34";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./assets/ui.jpg",
+  "./assets/EGO~eyes glazing over.m4a",
+  "./assets/The people with no name.m4a",
   "./assets/seeding2.m4a",
   "./assets/weaponhit2.m4a",
   "./assets/ready-metal.m4a",
