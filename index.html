@@ -392,6 +392,7 @@
     seedEnd:   'assets/seed-end',
     startup:        'assets/startup',
     seeding:        'assets/seeding',
+    seeding2:       'assets/seeding2',
     burstMode:      'assets/burst_mode',
     sigleMode:      'assets/sigle_mode',
     burstModeFire:  'assets/burst_mode-fire',
@@ -487,12 +488,12 @@
 
   /*
    * ENTER 长按分支：
-   * TOP2 / TOP3 已播放 ready 后，按住 ENTER 达到 1 秒，
+   * TOP2 / TOP3 已播放 ready 后，按住 ENTER 达到 0.5 秒，
    * 播放 enter → exceed charge2，并阻止普通 exceed charge。
    *
    * 修改此数值即可调整长按时间。
    */
-  const ENTER_LONG_PRESS_MS=1000;
+  const ENTER_LONG_PRESS_MS=500;
   let enterPressTimer=null;
   let enterPressPointerId=null;
   let enterLongPressTriggered=false;
@@ -500,9 +501,9 @@
   /*
    * TOP2 长按分支：
    * 短按播放 ready；
-   * 长按满 1 秒只播放 ready-metal，不播放 ready。
+   * 长按满 0.5 秒只播放 ready-metal，不播放 ready。
    */
-  const TOP2_LONG_PRESS_MS=1000;
+  const TOP2_LONG_PRESS_MS=500;
   let top2PressTimer=null;
   let top2PressPointerId=null;
   let top2LongPressTriggered=false;
@@ -686,7 +687,40 @@
     seedingNode=null;
   }
 
-  function playNextSeedingLoop(){
+  /*
+   * seeding2 循环：每次结束后立即播放下一遍，
+   * 直到 TOP1 调用 stopSeeding()。
+   */
+  function playNextSeeding2Loop(){
+    if(!seedingLoopActive) return;
+
+    const node=play('seeding2');
+
+    if(!node){
+      console.warn('seeding2 无法播放');
+      seedingLoopActive=false;
+      seedingNode=null;
+      return;
+    }
+
+    seedingNode=node;
+
+    node.onended=()=>{
+      if(seedingNode===node){
+        seedingNode=null;
+      }
+
+      if(seedingLoopActive){
+        playNextSeeding2Loop();
+      }
+    };
+  }
+
+  /*
+   * 先播放一次 seeding，
+   * seeding 结束后立即进入 seeding2 无限循环。
+   */
+  function playSeedingThenLoopSeeding2(){
     if(!seedingLoopActive) return;
 
     const node=play('seeding');
@@ -701,19 +735,12 @@
     seedingNode=node;
 
     node.onended=()=>{
-      /*
-       * 只清理当前这一段，避免旧节点覆盖新节点引用。
-       */
       if(seedingNode===node){
         seedingNode=null;
       }
 
-      /*
-       * 只要 TOP1 尚未结束 Seed 模式，
-       * 就立即播放下一遍 seeding。
-       */
       if(seedingLoopActive){
-        playNextSeedingLoop();
+        playNextSeeding2Loop();
       }
     };
   }
@@ -1393,7 +1420,7 @@
    * - 打开 popup1
    *
    * Seed 模式中再次按 TOP1：
-   * - 若 seeding 正在播放，立即停止
+   * - 立即停止正在播放的 seeding 或 seeding2
    * - 播放 seed-end
    * - 关闭 popup1
    */
@@ -1493,6 +1520,11 @@
    * 只有按 TOP1 结束 Seed 模式，
    * 才会调用 stopSeeding() 停止循环。
    */
+  /*
+   * popup1 第二个按钮：
+   * 播放一次 seeding，
+   * 然后持续循环播放 seeding2。
+   */
   async function onPopup1Seeding(event){
     event.stopPropagation();
 
@@ -1501,20 +1533,25 @@
 
     interruptRing();
 
-    /*
-     * 已经在循环时，忽略重复点击。
-     */
-    if(seedingLoopActive) return;
+    if(seedingLoopActive || seedingNode) return;
 
-    const loaded=await ensureSoundLoaded('seeding');
+    const [seedingLoaded,seeding2Loaded]=await Promise.all([
+      ensureSoundLoaded('seeding'),
+      ensureSoundLoaded('seeding2')
+    ]);
 
-    if(!loaded){
+    if(!seedingLoaded){
       console.warn('未找到 assets/seeding.m4a');
       return;
     }
 
+    if(!seeding2Loaded){
+      console.warn('未找到 assets/seeding2.m4a');
+      return;
+    }
+
     seedingLoopActive=true;
-    playNextSeedingLoop();
+    playSeedingThenLoopSeeding2();
   }
 
   /* 第四个圆形按钮：打开/关闭第二个弹框 */
@@ -1632,7 +1669,7 @@
     }catch{}
 
     /*
-     * 未达到 1 秒时执行原短按 ready。
+     * 未达到 0.5 秒时执行原短按 ready。
      * 已触发长按时，松手不再补一次 ready。
      */
     if(!cancelled && !wasLongPress){
