@@ -386,6 +386,7 @@
     release:   'assets/release',
     combo3821: 'assets/3821',
     weaponHit: 'assets/weaponHit',
+    weaponHit2:'assets/weaponhit2',
     qj:        'assets/qj',
     faizSeed:  'assets/faiz-seed',
     seedEnd:   'assets/seed-end',
@@ -517,6 +518,17 @@
   let modeFireShots=0;
   let modeSequenceToken=0;
   const MODE_FIRE_MAX_SHOTS=3;
+
+  /*
+   * # 长按分支：
+   * 仅变身后有效。
+   * 短按播放 weaponHit；
+   * 长按满 0.5 秒只播放 weaponhit2。
+   */
+  const HASH_LONG_PRESS_MS=500;
+  let hashPressTimer=null;
+  let hashPressPointerId=null;
+  let hashLongPressTriggered=false;
 
 
   /*
@@ -1218,7 +1230,7 @@
     interruptRing();
 
     /*
-     * # 按钮正确逻辑：
+     * # 短按逻辑：
      * 未变身播放 key1；
      * 变身后播放 weaponHit。
      */
@@ -1226,6 +1238,102 @@
     else play('key1');
 
     buf=(buf+'#').slice(-3);
+  }
+
+  async function onHashLongPress(){
+    if(!audioReady) return;
+    if(!transformed) return;
+
+    interruptRing();
+
+    const loaded=await ensureSoundLoaded('weaponHit2');
+
+    if(!loaded){
+      console.warn('未找到 assets/weaponhit2.m4a');
+      return;
+    }
+
+    const node=play('weaponHit2');
+
+    if(!node){
+      console.warn('weaponhit2 无法播放');
+      return;
+    }
+
+    /*
+     * 长按也视为一次 # 输入。
+     * 只写入一次缓存，不触发短按 weaponHit。
+     */
+    buf=(buf+'#').slice(-3);
+  }
+
+  function clearHashPressTimer(){
+    if(hashPressTimer){
+      clearTimeout(hashPressTimer);
+      hashPressTimer=null;
+    }
+  }
+
+  function onHashPointerDown(event){
+    if(event.pointerType==='mouse' && event.button!==0) return;
+    if(hashPressPointerId!==null) return;
+
+    hashPressPointerId=event.pointerId;
+    hashLongPressTriggered=false;
+
+    try{
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }catch{}
+
+    /*
+     * 只有变身后才建立 weaponhit2 长按定时器。
+     * 未变身时，无论按多久，松手仍按普通 # 处理为 key1。
+     */
+    if(!audioReady || !transformed) return;
+
+    clearHashPressTimer();
+
+    hashPressTimer=setTimeout(()=>{
+      hashPressTimer=null;
+
+      if(hashPressPointerId!==event.pointerId) return;
+      if(!audioReady || !transformed) return;
+
+      hashLongPressTriggered=true;
+      onHashLongPress();
+    },HASH_LONG_PRESS_MS);
+  }
+
+  function finishHashPointer(event,{cancelled=false}={}){
+    if(hashPressPointerId!==event.pointerId) return;
+
+    clearHashPressTimer();
+
+    const wasLongPress=hashLongPressTriggered;
+
+    hashPressPointerId=null;
+    hashLongPressTriggered=false;
+
+    try{
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }catch{}
+
+    /*
+     * 未触发长按时执行原短按逻辑。
+     * 已触发长按时，松手不再补播放 weaponHit。
+     */
+    if(!cancelled && !wasLongPress){
+      onHash();
+    }
+  }
+
+  function onHashPointerUp(event){
+    event.preventDefault();
+    finishHashPointer(event);
+  }
+
+  function onHashPointerCancel(event){
+    finishHashPointer(event,{cancelled:true});
   }
 
   function ringStart(){
@@ -1604,12 +1712,42 @@
     if(k==='*'){
       b.addEventListener('click', onStar);
     }else if(k==='#'){
-      b.addEventListener('click', onHash);
+      /*
+       * # 由下方 pointer 事件单独处理短按与长按。
+       */
     }else{
       b.addEventListener('click', ()=>pressDigit(k));
     }
   });
   document.getElementById('btnOpenPhone').addEventListener('click', onOpenPhone);
+
+  const hashButton=document.getElementById('btnHash');
+
+  hashButton.addEventListener('pointerdown',onHashPointerDown);
+  hashButton.addEventListener('pointerup',onHashPointerUp);
+  hashButton.addEventListener('pointercancel',onHashPointerCancel);
+
+  hashButton.addEventListener('lostpointercapture',()=>{
+    clearHashPressTimer();
+    hashPressPointerId=null;
+    hashLongPressTriggered=false;
+  });
+
+  hashButton.addEventListener('contextmenu',(event)=>{
+    event.preventDefault();
+  });
+
+  /*
+   * 触摸与鼠标由 pointer 事件处理。
+   * detail===0 保留键盘或脚本 click。
+   */
+  hashButton.addEventListener('click',(event)=>{
+    if(event.detail===0){
+      onHash();
+    }else{
+      event.preventDefault();
+    }
+  });
 
   const enterButton=document.getElementById('btnEnter');
 
