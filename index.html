@@ -1218,12 +1218,12 @@
     interruptRing();
 
     /*
-     * # 按钮保持原有逻辑：
-     * 未变身播放 qj；
+     * # 按钮正确逻辑：
+     * 未变身播放 key1；
      * 变身后播放 weaponHit。
      */
     if(transformed) play('weaponHit');
-    else play('qj');
+    else play('key1');
 
     buf=(buf+'#').slice(-3);
   }
