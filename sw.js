@@ -1,5 +1,5 @@
-const APP_CACHE = "faiz-app-v45";
-const AUDIO_CACHE = "faiz-audio-v1";
+const APP_CACHE = "faiz-app-v46";
+const AUDIO_CACHE = "faiz-audio-v2";
 const MUSIC_CACHE = "faiz-music-v1";
 
 const CORE_ASSETS = [
@@ -17,23 +17,23 @@ const CORE_ASSETS = [
  * 除非显式升级 AUDIO_CACHE 的版本号。
  */
 const ESSENTIAL_AUDIO = [
-  "./assets/open phone.m4a",
-  "./assets/ring.m4a",
-  "./assets/enter.m4a",
-  "./assets/key1.m4a",
-  "./assets/key5_2.m4a",
-  "./assets/key5_3.m4a",
-  "./assets/stand by.m4a",
-  "./assets/complete.m4a",
-  "./assets/error.m4a",
-  "./assets/ready.m4a",
-  "./assets/s-ready.m4a",
-  "./assets/exceed charge.m4a",
-  "./assets/release.m4a",
-  "./assets/3821.m4a",
-  "./assets/weaponHit.m4a",
-  "./assets/qj.m4a",
-  "./assets/seed-end.m4a"
+  "./assets/open phone.m4a?av=2",
+  "./assets/ring.m4a?av=2",
+  "./assets/enter.m4a?av=2",
+  "./assets/key1.m4a?av=2",
+  "./assets/key5_2.m4a?av=2",
+  "./assets/key5_3.m4a?av=2",
+  "./assets/stand by.m4a?av=2",
+  "./assets/complete.m4a?av=2",
+  "./assets/error.m4a?av=2",
+  "./assets/ready.m4a?av=2",
+  "./assets/s-ready.m4a?av=2",
+  "./assets/exceed charge.m4a?av=2",
+  "./assets/release.m4a?av=2",
+  "./assets/3821.m4a?av=2",
+  "./assets/weaponHit.m4a?av=2",
+  "./assets/qj.m4a?av=2",
+  "./assets/seed-end.m4a?av=2"
 ];
 
 const MUSIC_PATHS = new Set([

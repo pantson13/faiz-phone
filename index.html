@@ -483,7 +483,20 @@
   };
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
 
-  const AUDIO_URL_MAP_STORAGE_KEY='faiz_audio_url_map_v2';
+  /*
+   * 同名音频内容更新时递增这个版本。
+   * 例如 assets/seed-end.m4a?av=2。
+   */
+  const AUDIO_ASSET_VERSION='2';
+  const AUDIO_URL_MAP_STORAGE_KEY='faiz_audio_url_map_v3';
+
+  function withAudioVersion(url){
+    const separator=url.includes('?') ? '&' : '?';
+
+    return `${url}${separator}av=${encodeURIComponent(
+      AUDIO_ASSET_VERSION
+    )}`;
+  }
 
   const urlMap=(()=>{
     try{
@@ -570,7 +583,7 @@
     }
 
     for(const ext of EXT){
-      const url=`${base}${ext}`;
+      const url=withAudioVersion(`${base}${ext}`);
 
       try{
         const response=await fetch(url);
