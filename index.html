@@ -151,71 +151,42 @@
     --popup4-w:    88%;
     --popup4-h:    25%;
 
-    /* ===== 第一层弹框：与 KAIXA 同尺寸 ===== */
+    /*
+     * ===== TOP1 弹框：自适应 3 + 3 + 2 网格 =====
+     *
+     * 弹框宽度继续使用 88%。
+     * 弹框高度不再写死，而是由按钮直径、三排按钮和上下间距
+     * 在 placePopup1Grid() 中自动计算。
+     *
+     * 所有 POPUP1-BTN1～BTN8 使用完全相同的像素直径。
+     */
     --popup1-left: 6%;
     --popup1-top:  15%;
     --popup1-w:    88%;
-    --popup1-h:    25%;
-
 
     /*
-     * TOP1 弹窗内三个圆形按钮。
-     * 尺寸按 KAIXA 顶部圆形按钮比例换算到 popup1 内部。
+     * 按钮直径以弹框宽度为基准。
+     * 20.45% 与原 POPUP1-BTN1 的宽度一致。
      */
-    --popup1-btn1-left: 7%;
-    --popup1-btn1-top:  32%;
-    --popup1-btn1-w:    20.45%;
-    --popup1-btn1-h:    36%;
-
-    --popup1-btn2-left: 39.78%;
-    --popup1-btn2-top:  32%;
-    --popup1-btn2-w:    20.45%;
-    --popup1-btn2-h:    36%;
-
-    --popup1-btn3-left: 72.55%;
-    --popup1-btn3-top:  32%;
-    --popup1-btn3-w:    20.45%;
-    --popup1-btn3-h:    36%;
+    --popup1-grid-btn-size: 20.45%;
 
     /*
-     * TOP1 弹框内新增 POPUP1-BTN4～POPUP1-BTN10 七个圆形按钮。
-     * POPUP1-BTN1～POPUP1-BTN10，共 10 个按钮。
-     * 默认位于原有三个按钮下方，一行排列。
+     * 三列位置沿用原 BTN1、BTN2、BTN3 的横向位置。
      */
-    --popup1-btn4-left: 2%;
-    --popup1-btn4-top:  73%;
-    --popup1-btn4-w:    9%;
-    --popup1-btn4-h:    20%;
+    --popup1-grid-col1-left: 7%;
+    --popup1-grid-col2-left: 39.78%;
+    --popup1-grid-col3-left: 72.55%;
 
-    --popup1-btn5-left: 16.83%;
-    --popup1-btn5-top:  73%;
-    --popup1-btn5-w:    9%;
-    --popup1-btn5-h:    20%;
+    /*
+     * 第三排只有 BTN7、BTN8，自动居中排列。
+     *
+     * 上边距、排间距、下边距都按照按钮直径计算，
+     * 所以无论窗口怎样缩放，弹框和圆形按钮都会同步自适应。
+     */
+    --popup1-grid-top-padding: 90%;
+    --popup1-grid-row-gap:    25%;
+    --popup1-grid-bottom-padding: 30%;
 
-    --popup1-btn6-left: 31.66%;
-    --popup1-btn6-top:  73%;
-    --popup1-btn6-w:    9%;
-    --popup1-btn6-h:    20%;
-
-    --popup1-btn7-left: 46.49%;
-    --popup1-btn7-top:  73%;
-    --popup1-btn7-w:    9%;
-    --popup1-btn7-h:    20%;
-
-    --popup1-btn8-left: 61.32%;
-    --popup1-btn8-top:  73%;
-    --popup1-btn8-w:    9%;
-    --popup1-btn8-h:    20%;
-
-    --popup1-btn9-left: 76.15%;
-    --popup1-btn9-top:  73%;
-    --popup1-btn9-w:    9%;
-    --popup1-btn9-h:    20%;
-
-    --popup1-btn10-left: 90.98%;
-    --popup1-btn10-top:  73%;
-    --popup1-btn10-w:    9%;
-    --popup1-btn10-h:    20%;
 
     /*
      * 界面中间左侧 FIRE 按钮
@@ -370,7 +341,7 @@
                 type="button"
                 aria-label="POPUP1-BTN3"></button>
 
-        <!-- TOP1 弹框新增 POPUP1-BTN4～POPUP1-BTN10：总共 10 个 -->
+        <!-- TOP1 弹框新增 POPUP1-BTN4～POPUP1-BTN8：总共 8 个 -->
         <button class="hit circle popup-inner-circle"
                 id="popup1Btn4"
                 type="button"
@@ -396,15 +367,7 @@
                 type="button"
                 aria-label="POPUP1-BTN8"></button>
 
-        <button class="hit circle popup-inner-circle"
-                id="popup1Btn9"
-                type="button"
-                aria-label="POPUP1-BTN9"></button>
 
-        <button class="hit circle popup-inner-circle"
-                id="popup1Btn10"
-                type="button"
-                aria-label="POPUP1-BTN10"></button>
       </div>
 
       <!-- 中间左侧：106/103 模式共用 FIRE 按钮 -->
@@ -468,6 +431,8 @@
     startup:        'assets/startup',
     seeding:        'assets/seeding',
     seeding2:       'assets/seeding2',
+    seeding3:       'assets/seeding3',
+    seeding4:       'assets/seeding4',
     burstMode:      'assets/burst_mode',
     sigleMode:      'assets/sigle_mode',
     burstModeFire:  'assets/burst_mode-fire',
@@ -613,8 +578,8 @@
 
   /*
    * 现有 POPUP1-BTN2：
-   * 短按保持原 seeding → seeding2 循环逻辑；
-   * 长按满 0.5 秒播放一次 seeding2。
+   * 短按：seeding → seeding2 持续循环；
+   * 长按 0.5 秒：seeding3 → seeding4 持续循环。
    */
   const POPUP1_BTN2_LONG_PRESS_MS=500;
   let popup1Btn2PressTimer=null;
@@ -662,12 +627,45 @@
   let faizSeedLoading=false;
 
   /*
-   * seeding 强制循环状态：
-   * 不依赖 AudioBufferSourceNode.loop，
-   * 每次播放结束后由代码立即播放下一遍。
+   * POPUP1-BTN2 音效序列状态：
+   *
+   * 短按：seeding → seeding2 持续循环。
+   * 长按：seeding3 → seeding4 持续循环。
+   *
+   * 两种序列都共用同一播放节点和循环开关，
+   * 只有再次按 TOP1 才会调用 stopSeeding() 终止。
    */
   let seedingNode=null;
   let seedingLoopActive=false;
+
+  /*
+   * POPUP1 按钮音效锁定规则。
+   *
+   * BTN3：锁定 BTN4、BTN5、BTN7。
+   * BTN4：锁定 BTN3、BTN4。
+   * BTN5：锁定 BTN3、BTN4、BTN7。
+   *
+   * 短按和长按使用同一套规则。
+   * 锁定只有在 TOP1 再次按下并且 seed-end 播放完成后解除。
+   */
+  const POPUP1_BRANCH_LONG_PRESS_MS=500;
+  const POPUP1_SOUND_LOCK_RULES={
+    3:[4,5,7],
+    4:[3,4],
+    5:[3,4,7]
+  };
+
+  const popup1LockedSoundButtons=new Set();
+
+  const popup1BranchPressStates={
+    3:{timer:null,pointerId:null,longTriggered:false},
+    4:{timer:null,pointerId:null,longTriggered:false},
+    5:{timer:null,pointerId:null,longTriggered:false}
+  };
+
+  let seedEndNode=null;
+  let seedEndTimer=null;
+  let seedEndPlaying=false;
 
   /*
    * complete 的结束状态采用 onended + 音频时长定时器双保险。
@@ -719,6 +717,8 @@
     'startup',
     'seeding',
     'seeding2',
+    'seeding3',
+    'seeding4',
     'burstMode',
     'sigleMode',
     'burstModeFire',
@@ -795,6 +795,8 @@
     faizSeedLoading=false;
 
     stopSeeding();
+    stopSeedEndPlayback();
+    resetPopup1SoundButtonLocks();
     closeSeedPopup();
 
     resetStandBy();
@@ -839,6 +841,203 @@
     stop(seedingNode);
     seedingNode=null;
   }
+
+  function syncPopup1SoundButtonLocks(){
+    for(let buttonNumber=3;buttonNumber<=8;buttonNumber+=1){
+      const button=document.getElementById(`popup1Btn${buttonNumber}`);
+
+      if(!button) continue;
+
+      const locked=popup1LockedSoundButtons.has(buttonNumber);
+
+      button.disabled=locked;
+      button.dataset.soundLocked=locked ? 'true' : 'false';
+      button.setAttribute('aria-disabled',locked ? 'true' : 'false');
+    }
+  }
+
+  function resetPopup1SoundButtonLocks(){
+    popup1LockedSoundButtons.clear();
+    syncPopup1SoundButtonLocks();
+  }
+
+  function canTriggerPopup1ButtonSound(buttonNumber){
+    if(!audioReady) return false;
+    if(!faizSeedUnlocked || !faizSeedActive) return false;
+    if(seedEndPlaying) return false;
+
+    return !popup1LockedSoundButtons.has(buttonNumber);
+  }
+
+  /*
+   * BTN3 / BTN4 / BTN5 后续音效统一从这里进入。
+   * 返回 false 时，本次音效不得触发。
+   */
+  function activatePopup1ButtonSoundLine(buttonNumber,pressType){
+    if(!canTriggerPopup1ButtonSound(buttonNumber)) return false;
+
+    const buttonsToLock=POPUP1_SOUND_LOCK_RULES[buttonNumber] || [];
+
+    buttonsToLock.forEach((number)=>{
+      popup1LockedSoundButtons.add(number);
+    });
+
+    syncPopup1SoundButtonLocks();
+
+    const button=document.getElementById(`popup1Btn${buttonNumber}`);
+
+    if(button){
+      button.dataset.lastPressType=pressType;
+    }
+
+    return true;
+  }
+
+  function clearPopup1BranchPressTimer(buttonNumber){
+    const state=popup1BranchPressStates[buttonNumber];
+
+    if(!state || !state.timer) return;
+
+    clearTimeout(state.timer);
+    state.timer=null;
+  }
+
+  function onPopup1BranchPointerDown(buttonNumber,event){
+    event.stopPropagation();
+
+    const state=popup1BranchPressStates[buttonNumber];
+
+    if(!state) return;
+    if(event.pointerType==='mouse' && event.button!==0) return;
+    if(state.pointerId!==null) return;
+    if(!canTriggerPopup1ButtonSound(buttonNumber)) return;
+
+    state.pointerId=event.pointerId;
+    state.longTriggered=false;
+
+    try{
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }catch{}
+
+    clearPopup1BranchPressTimer(buttonNumber);
+
+    state.timer=setTimeout(()=>{
+      state.timer=null;
+
+      if(state.pointerId!==event.pointerId) return;
+      if(!canTriggerPopup1ButtonSound(buttonNumber)) return;
+
+      state.longTriggered=true;
+      activatePopup1ButtonSoundLine(buttonNumber,'long');
+    },POPUP1_BRANCH_LONG_PRESS_MS);
+  }
+
+  function finishPopup1BranchPointer(
+    buttonNumber,
+    event,
+    {cancelled=false}={}
+  ){
+    event.stopPropagation();
+
+    const state=popup1BranchPressStates[buttonNumber];
+
+    if(!state || state.pointerId!==event.pointerId) return;
+
+    clearPopup1BranchPressTimer(buttonNumber);
+
+    const wasLongPress=state.longTriggered;
+
+    state.pointerId=null;
+    state.longTriggered=false;
+
+    try{
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }catch{}
+
+    if(!cancelled && !wasLongPress){
+      activatePopup1ButtonSoundLine(buttonNumber,'short');
+    }
+  }
+
+  function bindPopup1SoundLineButton(buttonNumber){
+    const button=document.getElementById(`popup1Btn${buttonNumber}`);
+    const state=popup1BranchPressStates[buttonNumber];
+
+    if(!button || !state) return;
+
+    button.addEventListener('pointerdown',(event)=>{
+      onPopup1BranchPointerDown(buttonNumber,event);
+    });
+
+    button.addEventListener('pointerup',(event)=>{
+      event.preventDefault();
+      finishPopup1BranchPointer(buttonNumber,event);
+    });
+
+    button.addEventListener('pointercancel',(event)=>{
+      finishPopup1BranchPointer(
+        buttonNumber,
+        event,
+        {cancelled:true}
+      );
+    });
+
+    button.addEventListener('lostpointercapture',()=>{
+      clearPopup1BranchPressTimer(buttonNumber);
+      state.pointerId=null;
+      state.longTriggered=false;
+    });
+
+    button.addEventListener('contextmenu',(event)=>{
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    button.addEventListener('click',(event)=>{
+      if(event.detail===0){
+        activatePopup1ButtonSoundLine(buttonNumber,'short');
+      }else{
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
+  }
+
+  function clearSeedEndTimer(){
+    if(seedEndTimer){
+      clearTimeout(seedEndTimer);
+      seedEndTimer=null;
+    }
+  }
+
+  function stopSeedEndPlayback(){
+    clearSeedEndTimer();
+
+    if(seedEndNode){
+      seedEndNode.onended=null;
+      stop(seedEndNode);
+      seedEndNode=null;
+    }
+
+    seedEndPlaying=false;
+  }
+
+  function finishSeedEnd(){
+    if(!seedEndPlaying) return;
+
+    clearSeedEndTimer();
+    seedEndNode=null;
+    seedEndPlaying=false;
+
+    faizSeedActive=false;
+    faizSeedLoading=false;
+
+    /*
+     * 必须等 seed-end 真正结束后才解除音效锁定。
+     */
+    resetPopup1SoundButtonLocks();
+  }
+
 
   /*
    * seeding2 循环：每次结束后立即播放下一遍，
@@ -894,6 +1093,67 @@
 
       if(seedingLoopActive){
         playNextSeeding2Loop();
+      }
+    };
+  }
+
+  /*
+   * seeding4 循环：
+   * 每次播放结束后立即播放下一遍。
+   * POPUP1-BTN3～BTN8 不会影响它；
+   * 只有再次按 TOP1 才会调用 stopSeeding()。
+   */
+  function playNextSeeding4Loop(){
+    if(!seedingLoopActive) return;
+
+    const node=play('seeding4');
+
+    if(!node){
+      console.warn('seeding4 无法播放');
+      seedingLoopActive=false;
+      seedingNode=null;
+      return;
+    }
+
+    seedingNode=node;
+
+    node.onended=()=>{
+      if(seedingNode===node){
+        seedingNode=null;
+      }
+
+      if(seedingLoopActive){
+        playNextSeeding4Loop();
+      }
+    };
+  }
+
+  /*
+   * 长按 POPUP1-BTN2：
+   * 先播放一次 seeding3，
+   * seeding3 结束后进入 seeding4 无限循环。
+   */
+  function playSeeding3ThenLoopSeeding4(){
+    if(!seedingLoopActive) return;
+
+    const node=play('seeding3');
+
+    if(!node){
+      console.warn('seeding3 无法播放');
+      seedingLoopActive=false;
+      seedingNode=null;
+      return;
+    }
+
+    seedingNode=node;
+
+    node.onended=()=>{
+      if(seedingNode===node){
+        seedingNode=null;
+      }
+
+      if(seedingLoopActive){
+        playNextSeeding4Loop();
       }
     };
   }
@@ -1854,6 +2114,8 @@
       faizSeedLoading=false;
 
       stopSeeding();
+      stopSeedEndPlayback();
+      resetPopup1SoundButtonLocks();
       closeSeedPopup();
       resetCompleteState();
       resetModeFire();
@@ -1873,13 +2135,15 @@
    * - 打开 popup1
    *
    * Seed 模式中再次按 TOP1：
-   * - 立即停止正在播放的 seeding 或 seeding2
-   * - 播放 seed-end
+   * - 立即停止 seeding / seeding2 / seeding3 / seeding4
    * - 关闭 popup1
+   * - 播放 seed-end
+   * - seed-end 播放完成后解除 BTN3～BTN8 音效锁定
    */
   async function onTop1(){
     if(!audioReady) return;
     if(!faizSeedUnlocked) return;
+    if(seedEndPlaying) return;
     if(faizSeedLoading) return;
 
     interruptRing();
@@ -1888,10 +2152,11 @@
     const popup4=document.getElementById('popup4');
 
     /*
-     * 第一次按 TOP1：开启 Seed 模式。
+     * 第一次按 TOP1：开启新一轮 Seed 模式。
      */
     if(!faizSeedActive){
       faizSeedLoading=true;
+      resetPopup1SoundButtonLocks();
 
       try{
         const loaded=await ensureSoundLoaded('faizSeed');
@@ -1919,24 +2184,44 @@
     }
 
     /*
-     * 再按 TOP1：结束 Seed 模式。
+     * 再按 TOP1：
+     * 立即终止 BTN2 的 seeding2 / seeding4 循环，
+     * 关闭 POPUP1，然后播放 seed-end。
+     * 按钮锁定要等 seed-end 播放完成后才解除。
      */
     stopSeeding();
+    popup1.classList.remove('show');
+
+    seedEndPlaying=true;
+    faizSeedLoading=true;
 
     const loaded=await ensureSoundLoaded('seedEnd');
 
-    if(loaded){
-      const endNode=play('seedEnd');
-
-      if(!endNode){
-        console.warn('seed-end 无法播放');
-      }
-    }else{
+    if(!loaded){
       console.warn('未找到 assets/seed-end.m4a');
+      finishSeedEnd();
+      return;
     }
 
-    popup1.classList.remove('show');
-    faizSeedActive=false;
+    const endNode=play('seedEnd');
+
+    if(!endNode){
+      console.warn('seed-end 无法播放');
+      finishSeedEnd();
+      return;
+    }
+
+    seedEndNode=endNode;
+    seedEndNode.onended=finishSeedEnd;
+
+    const seedEndBuffer=buffers.get('seedEnd');
+
+    if(seedEndBuffer){
+      seedEndTimer=setTimeout(
+        finishSeedEnd,
+        Math.ceil((seedEndBuffer.duration+0.08)*1000)
+      );
+    }
   }
 
   /*
@@ -1985,24 +2270,41 @@
     }
   }
 
-  async function playPopup1Btn2LongPressSeeding2(){
+  async function startPopup1Btn2LongPressSequence(){
     if(!audioReady) return;
     if(!faizSeedUnlocked || !faizSeedActive) return;
 
     interruptRing();
 
-    const loaded=await ensureSoundLoaded('seeding2');
+    /*
+     * 短按或长按序列已经在运行时，不再启动第二套序列。
+     */
+    if(seedingLoopActive || seedingNode) return;
 
-    if(!loaded){
-      console.warn('未找到 assets/seeding2.m4a');
+    const [seeding3Loaded,seeding4Loaded]=await Promise.all([
+      ensureSoundLoaded('seeding3'),
+      ensureSoundLoaded('seeding4')
+    ]);
+
+    if(!seeding3Loaded){
+      console.warn('未找到 assets/seeding3.m4a');
       return;
     }
 
-    const node=play('seeding2');
-
-    if(!node){
-      console.warn('seeding2 无法播放');
+    if(!seeding4Loaded){
+      console.warn('未找到 assets/seeding4.m4a');
+      return;
     }
+
+    /*
+     * 加载期间可能已经再次按下 TOP1 退出 Seed 模式，
+     * 因此播放前重新检查状态。
+     */
+    if(!faizSeedUnlocked || !faizSeedActive) return;
+    if(seedingLoopActive || seedingNode) return;
+
+    seedingLoopActive=true;
+    playSeeding3ThenLoopSeeding4();
   }
 
   function onPopup1Btn2PointerDown(event){
@@ -2030,7 +2332,7 @@
       if(!faizSeedUnlocked || !faizSeedActive) return;
 
       popup1Btn2LongPressTriggered=true;
-      playPopup1Btn2LongPressSeeding2();
+      startPopup1Btn2LongPressSequence();
     },POPUP1_BTN2_LONG_PRESS_MS);
   }
 
@@ -2277,8 +2579,8 @@
 
   /*
    * 现有 POPUP1-BTN2：
-   * - 短按：保持 seeding → seeding2 循环
-   * - 长按 0.5 秒：播放一次 seeding2
+   * - 短按：seeding → seeding2 持续循环
+   * - 长按 0.5 秒：seeding3 → seeding4 持续循环
    */
   const popup1Btn2=document.getElementById('popup1Btn2');
 
@@ -2322,17 +2624,22 @@
   });
 
   /*
-   * POPUP1-BTN3～POPUP1-BTN10 暂时没有功能。
+   * BTN3、BTN4、BTN5：
+   * 短按和长按都进入同一套音效锁定规则。
+   * 当前尚未配置它们自己的具体音频文件。
+   */
+  bindPopup1SoundLineButton(3);
+  bindPopup1SoundLineButton(4);
+  bindPopup1SoundLineButton(5);
+
+  /*
+   * BTN6、BTN7、BTN8 暂未配置具体音效。
+   * 点击它们不会终止 BTN2 的 seeding2 / seeding4 循环。
    */
   [
-    'popup1Btn3',
-    'popup1Btn4',
-    'popup1Btn5',
     'popup1Btn6',
     'popup1Btn7',
-    'popup1Btn8',
-    'popup1Btn9',
-    'popup1Btn10'
+    'popup1Btn8'
   ].forEach((id)=>{
     document.getElementById(id)
       .addEventListener('click',(event)=>{
@@ -2470,94 +2777,7 @@
       pct('--btn-top4-h')
     );
 
-    setRectPct(
-      document.getElementById('popup1'),
-      pct('--popup1-left'),
-      pct('--popup1-top'),
-      pct('--popup1-w'),
-      pct('--popup1-h')
-    );
-
-
-    setPct(
-      document.getElementById('popup1Btn1'),
-      '--popup1-btn1-left',
-      '--popup1-btn1-top',
-      '--popup1-btn1-w',
-      '--popup1-btn1-h'
-    );
-
-    setPct(
-      document.getElementById('popup1Btn2'),
-      '--popup1-btn2-left',
-      '--popup1-btn2-top',
-      '--popup1-btn2-w',
-      '--popup1-btn2-h'
-    );
-
-    setPct(
-      document.getElementById('popup1Btn3'),
-      '--popup1-btn3-left',
-      '--popup1-btn3-top',
-      '--popup1-btn3-w',
-      '--popup1-btn3-h'
-    );
-
-    setPct(
-      document.getElementById('popup1Btn4'),
-      '--popup1-btn4-left',
-      '--popup1-btn4-top',
-      '--popup1-btn4-w',
-      '--popup1-btn4-h'
-    );
-
-    setPct(
-      document.getElementById('popup1Btn5'),
-      '--popup1-btn5-left',
-      '--popup1-btn5-top',
-      '--popup1-btn5-w',
-      '--popup1-btn5-h'
-    );
-
-    setPct(
-      document.getElementById('popup1Btn6'),
-      '--popup1-btn6-left',
-      '--popup1-btn6-top',
-      '--popup1-btn6-w',
-      '--popup1-btn6-h'
-    );
-
-    setPct(
-      document.getElementById('popup1Btn7'),
-      '--popup1-btn7-left',
-      '--popup1-btn7-top',
-      '--popup1-btn7-w',
-      '--popup1-btn7-h'
-    );
-
-    setPct(
-      document.getElementById('popup1Btn8'),
-      '--popup1-btn8-left',
-      '--popup1-btn8-top',
-      '--popup1-btn8-w',
-      '--popup1-btn8-h'
-    );
-
-    setPct(
-      document.getElementById('popup1Btn9'),
-      '--popup1-btn9-left',
-      '--popup1-btn9-top',
-      '--popup1-btn9-w',
-      '--popup1-btn9-h'
-    );
-
-    setPct(
-      document.getElementById('popup1Btn10'),
-      '--popup1-btn10-left',
-      '--popup1-btn10-top',
-      '--popup1-btn10-w',
-      '--popup1-btn10-h'
-    );
+    placePopup1Grid();
 
 
     setRectPct(
@@ -2625,8 +2845,102 @@
     setPct(document.getElementById('btnHash'),
       '--hash-left','--hash-top','--hash-w','--hash-h');
 
-    function pct(varName){ return parseFloat(css.getPropertyValue(varName)) || 0; }
-    function setPct(el, l,t,w,h){ setRectPct(el, pct(l), pct(t), pct(w), pct(h)); }
+    function pct(varName){
+      return parseFloat(css.getPropertyValue(varName)) || 0;
+    }
+
+    /*
+     * TOP1 弹框自适应布局：
+     *
+     * 第一排：BTN1、BTN2、BTN3
+     * 第二排：BTN4、BTN5、BTN6
+     * 第三排：BTN7、BTN8（居中）
+     *
+     * 所有按钮都使用同一个 diameter，
+     * 因此 BTN4～BTN8 与 BTN1 的实际像素大小完全一致。
+     */
+    function placePopup1Grid(){
+      const phone=document.getElementById('phone');
+      const popup=document.getElementById('popup1');
+
+      const phoneWidth=phone.clientWidth;
+      const phoneHeight=phone.clientHeight;
+
+      if(!phoneWidth || !phoneHeight) return;
+
+      const popupLeft=phoneWidth*pct('--popup1-left')/100;
+      const popupTop=phoneHeight*pct('--popup1-top')/100;
+      const popupWidth=phoneWidth*pct('--popup1-w')/100;
+
+      const diameter=
+        popupWidth*pct('--popup1-grid-btn-size')/100;
+
+      const topPadding=
+        diameter*pct('--popup1-grid-top-padding')/100;
+
+      const rowGap=
+        diameter*pct('--popup1-grid-row-gap')/100;
+
+      const bottomPadding=
+        diameter*pct('--popup1-grid-bottom-padding')/100;
+
+      const popupHeight=
+        topPadding
+        +(diameter*3)
+        +(rowGap*2)
+        +bottomPadding;
+
+      popup.style.left=`${popupLeft}px`;
+      popup.style.top=`${popupTop}px`;
+      popup.style.width=`${popupWidth}px`;
+      popup.style.height=`${popupHeight}px`;
+
+      const col1=
+        popupWidth*pct('--popup1-grid-col1-left')/100;
+
+      const col2=
+        popupWidth*pct('--popup1-grid-col2-left')/100;
+
+      const col3=
+        popupWidth*pct('--popup1-grid-col3-left')/100;
+
+      const columnStep=col2-col1;
+      const row1Top=topPadding;
+      const row2Top=row1Top+diameter+rowGap;
+      const row3Top=row2Top+diameter+rowGap;
+
+      /*
+       * 第三排两个按钮整体居中。
+       */
+      const lastRowWidth=(diameter*2)+(columnStep-diameter);
+      const lastRowLeft=(popupWidth-lastRowWidth)/2;
+
+      const positions=[
+        [1,col1,row1Top],
+        [2,col2,row1Top],
+        [3,col3,row1Top],
+        [4,col1,row2Top],
+        [5,col2,row2Top],
+        [6,col3,row2Top],
+        [7,lastRowLeft,row3Top],
+        [8,lastRowLeft+columnStep,row3Top]
+      ];
+
+      positions.forEach(([buttonNumber,left,top])=>{
+        const button=
+          document.getElementById(`popup1Btn${buttonNumber}`);
+
+        button.style.left=`${left}px`;
+        button.style.top=`${top}px`;
+        button.style.width=`${diameter}px`;
+        button.style.height=`${diameter}px`;
+      });
+    }
+
+    function setPct(el, l,t,w,h){
+      setRectPct(el, pct(l), pct(t), pct(w), pct(h));
+    }
+
     function setRectPct(el, l,t,w,h){
       el.style.left = l + '%';
       el.style.top  = t + '%';
