@@ -241,6 +241,33 @@
     border-radius:999px !important;
   }
 
+  /*
+   * BTN4 / BTN7 右下角同步次数。
+   * 使用独立元素，避免与调试用 aria-label 文字互相覆盖。
+   */
+  .popup-count-badge{
+    position:absolute;
+    right:4px;
+    bottom:3px;
+    z-index:80;
+    min-width:17px;
+    height:17px;
+    padding:0 4px;
+    box-sizing:border-box;
+    border-radius:999px;
+    background:rgba(0,0,0,.82);
+    border:1px solid #00ffff;
+    color:#ffffff;
+    font:700 11px/15px system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+    text-align:center;
+    pointer-events:none;
+    text-shadow:0 0 3px #000;
+  }
+
+  .popup-count-badge[hidden]{
+    display:none;
+  }
+
   .popup::after{
     content:attr(data-label);
     position:absolute;
@@ -345,7 +372,12 @@
         <button class="hit circle popup-inner-circle"
                 id="popup1Btn4"
                 type="button"
-                aria-label="POPUP1-BTN4"></button>
+                aria-label="POPUP1-BTN4">
+          <span class="popup-count-badge"
+                id="popup1Btn4Count"
+                aria-hidden="true"
+                hidden>0</span>
+        </button>
 
         <button class="hit circle popup-inner-circle"
                 id="popup1Btn5"
@@ -360,7 +392,12 @@
         <button class="hit circle popup-inner-circle"
                 id="popup1Btn7"
                 type="button"
-                aria-label="POPUP1-BTN7"></button>
+                aria-label="POPUP1-BTN7">
+          <span class="popup-count-badge"
+                id="popup1Btn7Count"
+                aria-hidden="true"
+                hidden>0</span>
+        </button>
 
         <button class="hit circle popup-inner-circle"
                 id="popup1Btn8"
@@ -433,6 +470,12 @@
     seeding2:       'assets/seeding2',
     seeding3:       'assets/seeding3',
     seeding4:       'assets/seeding4',
+    seedHit:        'assets/seed hit',
+    kickLine:       'assets/kick-line',
+    seedRun:        'assets/seed run',
+    seedHit2:       'assets/seed hit2',
+    kick:           'assets/kick',
+    kickEnd:        'assets/kick-end',
     burstMode:      'assets/burst_mode',
     sigleMode:      'assets/sigle_mode',
     burstModeFire:  'assets/burst_mode-fire',
@@ -642,30 +685,49 @@
    * POPUP1 按钮音效锁定规则。
    *
    * BTN3：锁定 BTN4、BTN5、BTN7。
-   * BTN4：锁定 BTN3、BTN4。
+   * BTN4：锁定 BTN3，但 BTN4 自身保持可点击以累计次数。
    * BTN5：锁定 BTN3、BTN4、BTN7。
    *
-   * 短按和长按使用同一套规则。
+   * BTN3、BTN4 只有普通点击，没有长按分支。
+   * BTN5 暂时保留短按和长按共用规则。
    * 锁定只有在 TOP1 再次按下并且 seed-end 播放完成后解除。
    */
   const POPUP1_BRANCH_LONG_PRESS_MS=500;
   const POPUP1_SOUND_LOCK_RULES={
     3:[4,5,7],
-    4:[3,4],
+    4:[3],
     5:[3,4,7]
   };
 
   const popup1LockedSoundButtons=new Set();
 
   const popup1BranchPressStates={
-    3:{timer:null,pointerId:null,longTriggered:false},
-    4:{timer:null,pointerId:null,longTriggered:false},
     5:{timer:null,pointerId:null,longTriggered:false}
   };
 
   let seedEndNode=null;
   let seedEndTimer=null;
   let seedEndPlaying=false;
+
+  /*
+   * BTN4 / BTN7 连携状态。
+   *
+   * BTN4 每次有效触发：
+   * - 播放 kick-line
+   * - 次数 +1
+   * - BTN4 与 BTN7 同步显示次数
+   *
+   * BTN7：
+   * - 次数为 0 时无效
+   * - kick 按次数顺序播放
+   * - 最后播放一次 kick-end
+   * - kick-end 结束后次数归零
+   */
+  let kickLineCount=0;
+  let kickSequencePlaying=false;
+  let kickSequenceNode=null;
+  let kickSequenceToken=0;
+  let popup1SoundSessionToken=0;
 
   /*
    * complete 的结束状态采用 onended + 音频时长定时器双保险。
@@ -719,6 +781,12 @@
     'seeding2',
     'seeding3',
     'seeding4',
+    'seedHit',
+    'kickLine',
+    'seedRun',
+    'seedHit2',
+    'kick',
+    'kickEnd',
     'burstMode',
     'sigleMode',
     'burstModeFire',
@@ -796,6 +864,8 @@
 
     stopSeeding();
     stopSeedEndPlayback();
+    stopKickSequence({resetCount:true});
+    popup1SoundSessionToken+=1;
     resetPopup1SoundButtonLocks();
     closeSeedPopup();
 
@@ -848,7 +918,14 @@
 
       if(!button) continue;
 
-      const locked=popup1LockedSoundButtons.has(buttonNumber);
+      const branchLocked=
+        popup1LockedSoundButtons.has(buttonNumber);
+
+      const kickBusyLocked=
+        kickSequencePlaying
+        && (buttonNumber===4 || buttonNumber===7);
+
+      const locked=branchLocked || kickBusyLocked;
 
       button.disabled=locked;
       button.dataset.soundLocked=locked ? 'true' : 'false';
@@ -866,6 +943,13 @@
     if(!faizSeedUnlocked || !faizSeedActive) return false;
     if(seedEndPlaying) return false;
 
+    if(
+      kickSequencePlaying
+      && (buttonNumber===4 || buttonNumber===7)
+    ){
+      return false;
+    }
+
     return !popup1LockedSoundButtons.has(buttonNumber);
   }
 
@@ -873,6 +957,228 @@
    * BTN3 / BTN4 / BTN5 后续音效统一从这里进入。
    * 返回 false 时，本次音效不得触发。
    */
+  function syncKickCountDisplay(){
+    const btn4Count=document.getElementById('popup1Btn4Count');
+    const btn7Count=document.getElementById('popup1Btn7Count');
+    const visible=kickLineCount>0;
+    const text=String(kickLineCount);
+
+    [btn4Count,btn7Count].forEach((badge)=>{
+      if(!badge) return;
+
+      badge.textContent=text;
+      badge.hidden=!visible;
+    });
+  }
+
+  function setKickLineCount(nextCount){
+    kickLineCount=Math.max(0,Math.floor(nextCount));
+    syncKickCountDisplay();
+  }
+
+  function resetKickLineCount(){
+    setKickLineCount(0);
+  }
+
+  function incrementKickLineCount(){
+    setKickLineCount(kickLineCount+1);
+  }
+
+  async function triggerPopup1SimpleSound(key,fileLabel){
+    const sessionToken=popup1SoundSessionToken;
+    const loaded=await ensureSoundLoaded(key);
+
+    if(!loaded){
+      console.warn(`未找到 assets/${fileLabel}.m4a`);
+      return false;
+    }
+
+    /*
+     * 音效加载期间若已经按 TOP1 结束本轮 Seed 模式，
+     * 不允许旧点击在新状态里补播。
+     */
+    if(sessionToken!==popup1SoundSessionToken) return false;
+    if(!faizSeedUnlocked || !faizSeedActive) return false;
+    if(seedEndPlaying) return false;
+
+    interruptRing();
+
+    const node=play(key);
+
+    if(!node){
+      console.warn(`${fileLabel} 无法播放`);
+      return false;
+    }
+
+    return true;
+  }
+
+  function stopKickSequence({resetCount=false}={}){
+    kickSequenceToken+=1;
+
+    if(kickSequenceNode){
+      kickSequenceNode.onended=null;
+      stop(kickSequenceNode);
+      kickSequenceNode=null;
+    }
+
+    kickSequencePlaying=false;
+
+    if(resetCount){
+      resetKickLineCount();
+    }
+
+    syncPopup1SoundButtonLocks();
+  }
+
+  function finishKickSequence(token){
+    if(token!==kickSequenceToken) return;
+
+    kickSequenceNode=null;
+    kickSequencePlaying=false;
+    resetKickLineCount();
+    syncPopup1SoundButtonLocks();
+  }
+
+  function playKickEndAfterSeries(token,sessionToken){
+    if(token!==kickSequenceToken) return;
+    if(sessionToken!==popup1SoundSessionToken) return;
+
+    const node=play('kickEnd');
+
+    if(!node){
+      console.warn('kick-end 无法播放');
+      finishKickSequence(token);
+      return;
+    }
+
+    kickSequenceNode=node;
+
+    node.onended=()=>{
+      if(token!==kickSequenceToken) return;
+
+      kickSequenceNode=null;
+      finishKickSequence(token);
+    };
+  }
+
+  function playNextKickInSeries(
+    remaining,
+    token,
+    sessionToken
+  ){
+    if(token!==kickSequenceToken) return;
+    if(sessionToken!==popup1SoundSessionToken) return;
+
+    if(remaining<=0){
+      playKickEndAfterSeries(token,sessionToken);
+      return;
+    }
+
+    const node=play('kick');
+
+    if(!node){
+      console.warn('kick 无法播放');
+      finishKickSequence(token);
+      return;
+    }
+
+    kickSequenceNode=node;
+
+    node.onended=()=>{
+      if(token!==kickSequenceToken) return;
+
+      kickSequenceNode=null;
+
+      playNextKickInSeries(
+        remaining-1,
+        token,
+        sessionToken
+      );
+    };
+  }
+
+  async function triggerPopup1Btn7KickSeries(event){
+    if(event){
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if(!canTriggerPopup1ButtonSound(7)) return;
+    if(kickLineCount<=0) return;
+    if(kickSequencePlaying) return;
+
+    const requestedKickCount=kickLineCount;
+    const sessionToken=popup1SoundSessionToken;
+    const token=kickSequenceToken+1;
+
+    kickSequenceToken=token;
+    kickSequencePlaying=true;
+    syncPopup1SoundButtonLocks();
+
+    const [kickLoaded,kickEndLoaded]=await Promise.all([
+      ensureSoundLoaded('kick'),
+      ensureSoundLoaded('kickEnd')
+    ]);
+
+    if(token!==kickSequenceToken) return;
+    if(sessionToken!==popup1SoundSessionToken) return;
+
+    if(!kickLoaded){
+      console.warn('未找到 assets/kick.m4a');
+      finishKickSequence(token);
+      return;
+    }
+
+    if(!kickEndLoaded){
+      console.warn('未找到 assets/kick-end.m4a');
+      finishKickSequence(token);
+      return;
+    }
+
+    if(!faizSeedUnlocked || !faizSeedActive || seedEndPlaying){
+      finishKickSequence(token);
+      return;
+    }
+
+    interruptRing();
+
+    playNextKickInSeries(
+      requestedKickCount,
+      token,
+      sessionToken
+    );
+  }
+
+  async function triggerPopup1Btn4KickLine(){
+    /*
+     * 次数代表有效按下次数，因此点击被接受后立即 +1。
+     * 首次加载音频稍慢时，界面计数仍然即时响应。
+     */
+    incrementKickLineCount();
+
+    await triggerPopup1SimpleSound(
+      'kickLine',
+      'kick-line'
+    );
+  }
+
+  async function triggerPopup1DirectSound(
+    buttonNumber,
+    key,
+    fileLabel,
+    event
+  ){
+    if(event){
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if(!canTriggerPopup1ButtonSound(buttonNumber)) return;
+
+    await triggerPopup1SimpleSound(key,fileLabel);
+  }
+
   function activatePopup1ButtonSoundLine(buttonNumber,pressType){
     if(!canTriggerPopup1ButtonSound(buttonNumber)) return false;
 
@@ -890,6 +1196,22 @@
       button.dataset.lastPressType=pressType;
     }
 
+    /*
+     * BTN3、BTN4 由普通点击进入。
+     * BTN5 才保留短按 / 长按共用锁定框架。
+     */
+    if(buttonNumber===3){
+      void triggerPopup1SimpleSound(
+        'seedHit',
+        'seed hit'
+      );
+    }else if(buttonNumber===4){
+      void triggerPopup1Btn4KickLine();
+    }
+
+    /*
+     * BTN5 当前只负责建立锁定逻辑，尚未配置音效。
+     */
     return true;
   }
 
@@ -1033,8 +1355,11 @@
     faizSeedLoading=false;
 
     /*
-     * 必须等 seed-end 真正结束后才解除音效锁定。
+     * 必须等 seed-end 真正结束后：
+     * - BTN4 / BTN7 次数归零
+     * - 解除音效锁定
      */
+    stopKickSequence({resetCount:true});
     resetPopup1SoundButtonLocks();
   }
 
@@ -2115,6 +2440,8 @@
 
       stopSeeding();
       stopSeedEndPlayback();
+      stopKickSequence({resetCount:true});
+      popup1SoundSessionToken+=1;
       resetPopup1SoundButtonLocks();
       closeSeedPopup();
       resetCompleteState();
@@ -2156,6 +2483,8 @@
      */
     if(!faizSeedActive){
       faizSeedLoading=true;
+      popup1SoundSessionToken+=1;
+      stopKickSequence({resetCount:true});
       resetPopup1SoundButtonLocks();
 
       try{
@@ -2190,6 +2519,8 @@
      * 按钮锁定要等 seed-end 播放完成后才解除。
      */
     stopSeeding();
+    popup1SoundSessionToken+=1;
+    stopKickSequence({resetCount:false});
     popup1.classList.remove('show');
 
     seedEndPlaying=true;
@@ -2624,28 +2955,70 @@
   });
 
   /*
-   * BTN3、BTN4、BTN5：
-   * 短按和长按都进入同一套音效锁定规则。
-   * 当前尚未配置它们自己的具体音频文件。
+   * BTN3：只有普通点击。
+   * 点击后播放 seed hit，并执行 BTN3 的锁定规则。
    */
-  bindPopup1SoundLineButton(3);
-  bindPopup1SoundLineButton(4);
+  document.getElementById('popup1Btn3')
+    .addEventListener('click',(event)=>{
+      event.preventDefault();
+      event.stopPropagation();
+
+      activatePopup1ButtonSoundLine(3,'click');
+    });
+
+  /*
+   * BTN4：只有普通点击。
+   * 每次点击播放 kick-line，并累计 BTN4 / BTN7 次数。
+   */
+  document.getElementById('popup1Btn4')
+    .addEventListener('click',(event)=>{
+      event.preventDefault();
+      event.stopPropagation();
+
+      activatePopup1ButtonSoundLine(4,'click');
+    });
+
+  /*
+   * BTN5 暂时继续使用原短按 / 长按锁定框架。
+   * 当前仍未配置 BTN5 自己的音效文件。
+   */
   bindPopup1SoundLineButton(5);
 
   /*
-   * BTN6、BTN7、BTN8 暂未配置具体音效。
-   * 点击它们不会终止 BTN2 的 seeding2 / seeding4 循环。
+   * BTN6：seed run
    */
-  [
-    'popup1Btn6',
-    'popup1Btn7',
-    'popup1Btn8'
-  ].forEach((id)=>{
-    document.getElementById(id)
-      .addEventListener('click',(event)=>{
-        event.stopPropagation();
-      });
-  });
+  document.getElementById('popup1Btn6')
+    .addEventListener('click',(event)=>{
+      void triggerPopup1DirectSound(
+        6,
+        'seedRun',
+        'seed run',
+        event
+      );
+    });
+
+  /*
+   * BTN7：
+   * BTN4 次数为 0 时无效；
+   * 有次数时 kick 播放对应次数，最后 kick-end 一次。
+   */
+  document.getElementById('popup1Btn7')
+    .addEventListener('click',(event)=>{
+      void triggerPopup1Btn7KickSeries(event);
+    });
+
+  /*
+   * BTN8：seed hit2
+   */
+  document.getElementById('popup1Btn8')
+    .addEventListener('click',(event)=>{
+      void triggerPopup1DirectSound(
+        8,
+        'seedHit2',
+        'seed hit2',
+        event
+      );
+    });
 
   document.querySelectorAll('.hit[data-k]').forEach(b=>{
     const k=b.dataset.k;
@@ -2778,6 +3151,7 @@
     );
 
     placePopup1Grid();
+    syncKickCountDisplay();
 
 
     setRectPct(
