@@ -1,4 +1,4 @@
-const CACHE_NAME = "faiz-pwa-v35";
+const CACHE_NAME = "faiz-pwa-v38";
 
 const CORE_ASSETS = [
   "./",

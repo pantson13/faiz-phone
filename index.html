@@ -177,6 +177,45 @@
     --popup1-btn3-w:    20.45%;
     --popup1-btn3-h:    36%;
 
+    /*
+     * TOP1 弹框内新增 POPUP1-BTN4～POPUP1-BTN10 七个圆形按钮。
+     * POPUP1-BTN1～POPUP1-BTN10，共 10 个按钮。
+     * 默认位于原有三个按钮下方，一行排列。
+     */
+    --popup1-btn4-left: 2%;
+    --popup1-btn4-top:  73%;
+    --popup1-btn4-w:    9%;
+    --popup1-btn4-h:    20%;
+
+    --popup1-btn5-left: 16.83%;
+    --popup1-btn5-top:  73%;
+    --popup1-btn5-w:    9%;
+    --popup1-btn5-h:    20%;
+
+    --popup1-btn6-left: 31.66%;
+    --popup1-btn6-top:  73%;
+    --popup1-btn6-w:    9%;
+    --popup1-btn6-h:    20%;
+
+    --popup1-btn7-left: 46.49%;
+    --popup1-btn7-top:  73%;
+    --popup1-btn7-w:    9%;
+    --popup1-btn7-h:    20%;
+
+    --popup1-btn8-left: 61.32%;
+    --popup1-btn8-top:  73%;
+    --popup1-btn8-w:    9%;
+    --popup1-btn8-h:    20%;
+
+    --popup1-btn9-left: 76.15%;
+    --popup1-btn9-top:  73%;
+    --popup1-btn9-w:    9%;
+    --popup1-btn9-h:    20%;
+
+    --popup1-btn10-left: 90.98%;
+    --popup1-btn10-top:  73%;
+    --popup1-btn10-w:    9%;
+    --popup1-btn10-h:    20%;
 
     /*
      * 界面中间左侧 FIRE 按钮
@@ -330,6 +369,42 @@
                 id="popup1Btn3"
                 type="button"
                 aria-label="POPUP1-BTN3"></button>
+
+        <!-- TOP1 弹框新增 POPUP1-BTN4～POPUP1-BTN10：总共 10 个 -->
+        <button class="hit circle popup-inner-circle"
+                id="popup1Btn4"
+                type="button"
+                aria-label="POPUP1-BTN4"></button>
+
+        <button class="hit circle popup-inner-circle"
+                id="popup1Btn5"
+                type="button"
+                aria-label="POPUP1-BTN5"></button>
+
+        <button class="hit circle popup-inner-circle"
+                id="popup1Btn6"
+                type="button"
+                aria-label="POPUP1-BTN6"></button>
+
+        <button class="hit circle popup-inner-circle"
+                id="popup1Btn7"
+                type="button"
+                aria-label="POPUP1-BTN7"></button>
+
+        <button class="hit circle popup-inner-circle"
+                id="popup1Btn8"
+                type="button"
+                aria-label="POPUP1-BTN8"></button>
+
+        <button class="hit circle popup-inner-circle"
+                id="popup1Btn9"
+                type="button"
+                aria-label="POPUP1-BTN9"></button>
+
+        <button class="hit circle popup-inner-circle"
+                id="popup1Btn10"
+                type="button"
+                aria-label="POPUP1-BTN10"></button>
       </div>
 
       <!-- 中间左侧：106/103 模式共用 FIRE 按钮 -->
@@ -535,6 +610,16 @@
 
   const MUSIC_LONG_PRESS_MS=500;
   const MUSIC_FADE_OUT_MS=2000;
+
+  /*
+   * 现有 POPUP1-BTN2：
+   * 短按保持原 seeding → seeding2 循环逻辑；
+   * 长按满 0.5 秒播放一次 seeding2。
+   */
+  const POPUP1_BTN2_LONG_PRESS_MS=500;
+  let popup1Btn2PressTimer=null;
+  let popup1Btn2PressPointerId=null;
+  let popup1Btn2LongPressTriggered=false;
 
   /*
    * 两首完整音乐使用 HTMLAudioElement 流式播放。
@@ -1893,6 +1978,96 @@
    * 播放一次 seeding，
    * 然后持续循环播放 seeding2。
    */
+  function clearPopup1Btn2PressTimer(){
+    if(popup1Btn2PressTimer){
+      clearTimeout(popup1Btn2PressTimer);
+      popup1Btn2PressTimer=null;
+    }
+  }
+
+  async function playPopup1Btn2LongPressSeeding2(){
+    if(!audioReady) return;
+    if(!faizSeedUnlocked || !faizSeedActive) return;
+
+    interruptRing();
+
+    const loaded=await ensureSoundLoaded('seeding2');
+
+    if(!loaded){
+      console.warn('未找到 assets/seeding2.m4a');
+      return;
+    }
+
+    const node=play('seeding2');
+
+    if(!node){
+      console.warn('seeding2 无法播放');
+    }
+  }
+
+  function onPopup1Btn2PointerDown(event){
+    event.stopPropagation();
+
+    if(event.pointerType==='mouse' && event.button!==0) return;
+    if(popup1Btn2PressPointerId!==null) return;
+
+    popup1Btn2PressPointerId=event.pointerId;
+    popup1Btn2LongPressTriggered=false;
+
+    try{
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }catch{}
+
+    if(!audioReady) return;
+    if(!faizSeedUnlocked || !faizSeedActive) return;
+
+    clearPopup1Btn2PressTimer();
+
+    popup1Btn2PressTimer=setTimeout(()=>{
+      popup1Btn2PressTimer=null;
+
+      if(popup1Btn2PressPointerId!==event.pointerId) return;
+      if(!faizSeedUnlocked || !faizSeedActive) return;
+
+      popup1Btn2LongPressTriggered=true;
+      playPopup1Btn2LongPressSeeding2();
+    },POPUP1_BTN2_LONG_PRESS_MS);
+  }
+
+  function finishPopup1Btn2Pointer(event,{cancelled=false}={}){
+    event.stopPropagation();
+
+    if(popup1Btn2PressPointerId!==event.pointerId) return;
+
+    clearPopup1Btn2PressTimer();
+
+    const wasLongPress=popup1Btn2LongPressTriggered;
+
+    popup1Btn2PressPointerId=null;
+    popup1Btn2LongPressTriggered=false;
+
+    try{
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }catch{}
+
+    /*
+     * 未达到 0.5 秒时，执行 POPUP1-BTN2 原来的短按逻辑。
+     * 长按松手后不会补触发短按。
+     */
+    if(!cancelled && !wasLongPress){
+      onPopup1Seeding(event);
+    }
+  }
+
+  function onPopup1Btn2PointerUp(event){
+    event.preventDefault();
+    finishPopup1Btn2Pointer(event);
+  }
+
+  function onPopup1Btn2PointerCancel(event){
+    finishPopup1Btn2Pointer(event,{cancelled:true});
+  }
+
   async function onPopup1Seeding(event){
     event.stopPropagation();
 
@@ -2100,16 +2275,70 @@
   document.getElementById('popup1Btn1')
     .addEventListener('click', onPopup1Startup);
 
-  document.getElementById('popup1Btn2')
-    .addEventListener('click', onPopup1Seeding);
+  /*
+   * 现有 POPUP1-BTN2：
+   * - 短按：保持 seeding → seeding2 循环
+   * - 长按 0.5 秒：播放一次 seeding2
+   */
+  const popup1Btn2=document.getElementById('popup1Btn2');
+
+  popup1Btn2.addEventListener(
+    'pointerdown',
+    onPopup1Btn2PointerDown
+  );
+
+  popup1Btn2.addEventListener(
+    'pointerup',
+    onPopup1Btn2PointerUp
+  );
+
+  popup1Btn2.addEventListener(
+    'pointercancel',
+    onPopup1Btn2PointerCancel
+  );
+
+  popup1Btn2.addEventListener('lostpointercapture',()=>{
+    clearPopup1Btn2PressTimer();
+    popup1Btn2PressPointerId=null;
+    popup1Btn2LongPressTriggered=false;
+  });
+
+  popup1Btn2.addEventListener('contextmenu',(event)=>{
+    event.preventDefault();
+    event.stopPropagation();
+  });
 
   /*
-   * 第三个按钮暂时保留，不绑定功能。
+   * pointer 事件处理鼠标和触摸。
+   * detail===0 保留键盘或脚本触发的原短按逻辑。
    */
-  document.getElementById('popup1Btn3')
-    .addEventListener('click',(event)=>{
+  popup1Btn2.addEventListener('click',(event)=>{
+    if(event.detail===0){
+      onPopup1Seeding(event);
+    }else{
+      event.preventDefault();
       event.stopPropagation();
-    });
+    }
+  });
+
+  /*
+   * POPUP1-BTN3～POPUP1-BTN10 暂时没有功能。
+   */
+  [
+    'popup1Btn3',
+    'popup1Btn4',
+    'popup1Btn5',
+    'popup1Btn6',
+    'popup1Btn7',
+    'popup1Btn8',
+    'popup1Btn9',
+    'popup1Btn10'
+  ].forEach((id)=>{
+    document.getElementById(id)
+      .addEventListener('click',(event)=>{
+        event.stopPropagation();
+      });
+  });
 
   document.querySelectorAll('.hit[data-k]').forEach(b=>{
     const k=b.dataset.k;
@@ -2272,6 +2501,62 @@
       '--popup1-btn3-top',
       '--popup1-btn3-w',
       '--popup1-btn3-h'
+    );
+
+    setPct(
+      document.getElementById('popup1Btn4'),
+      '--popup1-btn4-left',
+      '--popup1-btn4-top',
+      '--popup1-btn4-w',
+      '--popup1-btn4-h'
+    );
+
+    setPct(
+      document.getElementById('popup1Btn5'),
+      '--popup1-btn5-left',
+      '--popup1-btn5-top',
+      '--popup1-btn5-w',
+      '--popup1-btn5-h'
+    );
+
+    setPct(
+      document.getElementById('popup1Btn6'),
+      '--popup1-btn6-left',
+      '--popup1-btn6-top',
+      '--popup1-btn6-w',
+      '--popup1-btn6-h'
+    );
+
+    setPct(
+      document.getElementById('popup1Btn7'),
+      '--popup1-btn7-left',
+      '--popup1-btn7-top',
+      '--popup1-btn7-w',
+      '--popup1-btn7-h'
+    );
+
+    setPct(
+      document.getElementById('popup1Btn8'),
+      '--popup1-btn8-left',
+      '--popup1-btn8-top',
+      '--popup1-btn8-w',
+      '--popup1-btn8-h'
+    );
+
+    setPct(
+      document.getElementById('popup1Btn9'),
+      '--popup1-btn9-left',
+      '--popup1-btn9-top',
+      '--popup1-btn9-w',
+      '--popup1-btn9-h'
+    );
+
+    setPct(
+      document.getElementById('popup1Btn10'),
+      '--popup1-btn10-left',
+      '--popup1-btn10-top',
+      '--popup1-btn10-w',
+      '--popup1-btn10-h'
     );
 
 
