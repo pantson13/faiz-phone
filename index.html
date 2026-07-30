@@ -487,8 +487,8 @@
    * 同名音频内容更新时递增这个版本。
    * 例如 assets/seed-end.m4a?av=2。
    */
-  const AUDIO_ASSET_VERSION='2';
-  const AUDIO_URL_MAP_STORAGE_KEY='faiz_audio_url_map_v3';
+  const AUDIO_ASSET_VERSION='20260731-0103-v47';
+  const AUDIO_URL_MAP_STORAGE_KEY='faiz_audio_url_map_v4';
 
   function withAudioVersion(url){
     const separator=url.includes('?') ? '&' : '?';
@@ -497,6 +497,59 @@
       AUDIO_ASSET_VERSION
     )}`;
   }
+
+  const AUDIO_CACHE_MIGRATION_KEY='faiz_audio_migration_v47';
+
+  async function migrateLegacyAudioCaches(){
+    const alreadyMigrated=
+      localStorage.getItem(AUDIO_CACHE_MIGRATION_KEY)==='done';
+
+    if(alreadyMigrated) return;
+
+    /*
+     * 旧版在 GitHub Pages 子路径环境里可能把音频误放进
+     * faiz-app-*，所以这里清理全部旧 FAIZ 缓存。
+     */
+    if('caches' in window){
+      try{
+        const names=await caches.keys();
+
+        await Promise.all(
+          names
+            .filter((name)=>
+              name.startsWith('faiz-pwa-')
+              || name.startsWith('faiz-app-')
+              || name.startsWith('faiz-audio-')
+              || name.startsWith('faiz-music-')
+            )
+            .map((name)=>caches.delete(name))
+        );
+      }catch(error){
+        console.warn('旧缓存清理失败：',error);
+      }
+    }
+
+    [
+      'faiz_audio_url_map_v1',
+      'faiz_audio_url_map_v2',
+      'faiz_audio_url_map_v3',
+      'faiz_audio_url_map_v4'
+    ].forEach((key)=>{
+      try{
+        localStorage.removeItem(key);
+      }catch{}
+    });
+
+    try{
+      localStorage.setItem(
+        AUDIO_CACHE_MIGRATION_KEY,
+        'done'
+      );
+    }catch{}
+  }
+
+  const audioCacheMigrationPromise=
+    migrateLegacyAudioCaches();
 
   const urlMap=(()=>{
     try{
@@ -566,7 +619,10 @@
 
     if(knownUrl){
       try{
-        const response=await fetch(knownUrl);
+        const response=await fetch(
+          knownUrl,
+          {cache:'reload'}
+        );
 
         if(response.ok){
           return {url:knownUrl,response};
@@ -586,7 +642,10 @@
       const url=withAudioVersion(`${base}${ext}`);
 
       try{
-        const response=await fetch(url);
+        const response=await fetch(
+          url,
+          {cache:'reload'}
+        );
 
         if(!response.ok) continue;
 
@@ -790,7 +849,7 @@
    */
   const musicButtons={
     '0':{
-      url:'assets/The people with no name.m4a',
+      url:'assets/The people with no name.m4a?av=20260731-0103-v47',
       label:'The people with no name',
       timer:null,
       pointerId:null,
@@ -802,7 +861,7 @@
       fading:false
     },
     '7':{
-      url:'assets/EGO~eyes glazing over.m4a',
+      url:'assets/EGO~eyes glazing over.m4a?av=20260731-0103-v47',
       label:'EGO~eyes glazing over',
       timer:null,
       pointerId:null,
@@ -1834,6 +1893,12 @@
     }
 
     if(audioLoading) return;
+
+    /*
+     * 首次运行 v47 时，先确保旧程序缓存和旧音频缓存已清除。
+     */
+    await audioCacheMigrationPromise;
+
     audioLoading=true;
 
     const openButton=document.getElementById('btnOpenPhone');
@@ -3687,12 +3752,37 @@
 </script>
 
 <script>
-/* PWA：注册离线缓存 */
+/*
+ * 新版 Service Worker 接管后自动刷新一次，
+ * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
+ */
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch((error) => {
-      console.error("Service Worker 注册失败：", error);
-    });
+  const SW_RELOAD_KEY='faiz_sw_v47_reloaded';
+
+  navigator.serviceWorker.addEventListener(
+    'controllerchange',
+    ()=>{
+      if(sessionStorage.getItem(SW_RELOAD_KEY)==='1'){
+        return;
+      }
+
+      sessionStorage.setItem(SW_RELOAD_KEY,'1');
+      window.location.reload();
+    }
+  );
+
+  window.addEventListener("load", async() => {
+    try{
+      const registration=
+        await navigator.serviceWorker.register(
+          "./sw.js?v=47",
+          {updateViaCache:"none"}
+        );
+
+      await registration.update();
+    }catch(error){
+      console.error("Service Worker 注册失败：",error);
+    }
   });
 }
 </script>

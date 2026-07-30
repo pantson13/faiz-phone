@@ -1,6 +1,6 @@
-const APP_CACHE = "faiz-app-v46";
-const AUDIO_CACHE = "faiz-audio-v2";
-const MUSIC_CACHE = "faiz-music-v1";
+const APP_CACHE = "faiz-app-v47";
+const AUDIO_CACHE = "faiz-audio-v3";
+const MUSIC_CACHE = "faiz-music-v2";
 
 const CORE_ASSETS = [
   "./",
@@ -11,52 +11,19 @@ const CORE_ASSETS = [
   "./icons/icon-512.png"
 ];
 
-/*
- * 只在安装阶段预热最常用的短音效。
- * 后续新增代码版本不会清空 AUDIO_CACHE，
- * 除非显式升级 AUDIO_CACHE 的版本号。
- */
-const ESSENTIAL_AUDIO = [
-  "./assets/open phone.m4a?av=2",
-  "./assets/ring.m4a?av=2",
-  "./assets/enter.m4a?av=2",
-  "./assets/key1.m4a?av=2",
-  "./assets/key5_2.m4a?av=2",
-  "./assets/key5_3.m4a?av=2",
-  "./assets/stand by.m4a?av=2",
-  "./assets/complete.m4a?av=2",
-  "./assets/error.m4a?av=2",
-  "./assets/ready.m4a?av=2",
-  "./assets/s-ready.m4a?av=2",
-  "./assets/exceed charge.m4a?av=2",
-  "./assets/release.m4a?av=2",
-  "./assets/3821.m4a?av=2",
-  "./assets/weaponHit.m4a?av=2",
-  "./assets/qj.m4a?av=2",
-  "./assets/seed-end.m4a?av=2"
-];
-
-const MUSIC_PATHS = new Set([
-  "/assets/The people with no name.m4a",
-  "/assets/EGO~eyes glazing over.m4a"
-]);
-
 self.addEventListener("install", (event) => {
+  /*
+   * 安装阶段不再预缓存音频。
+   * 避免 GitHub Pages 部署尚未完全传播时抢先缓存旧声音。
+   */
   event.waitUntil(
-    Promise.all([
-      caches.open(APP_CACHE)
-        .then((cache) =>
-          Promise.allSettled(
-            CORE_ASSETS.map((url) => cache.add(url))
-          )
-        ),
-      caches.open(AUDIO_CACHE)
-        .then((cache) =>
-          Promise.allSettled(
-            ESSENTIAL_AUDIO.map((url) => cache.add(url))
-          )
+    caches.open(APP_CACHE)
+      .then((cache) =>
+        Promise.allSettled(
+          CORE_ASSETS.map((url) => cache.add(url))
         )
-    ]).then(() => self.skipWaiting())
+      )
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -66,32 +33,19 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => {
-              if(key.startsWith("faiz-pwa-")) return true;
-
-              if(
-                key.startsWith("faiz-app-")
-                && key !== APP_CACHE
-              ){
-                return true;
-              }
-
-              if(
-                key.startsWith("faiz-audio-")
-                && key !== AUDIO_CACHE
-              ){
-                return true;
-              }
-
-              if(
-                key.startsWith("faiz-music-")
-                && key !== MUSIC_CACHE
-              ){
-                return true;
-              }
-
-              return false;
-            })
+            .filter((key) =>
+              (
+                key.startsWith("faiz-pwa-")
+                || key.startsWith("faiz-app-")
+                || key.startsWith("faiz-audio-")
+                || key.startsWith("faiz-music-")
+              )
+              && ![
+                APP_CACHE,
+                AUDIO_CACHE,
+                MUSIC_CACHE
+              ].includes(key)
+            )
             .map((key) => caches.delete(key))
         )
       )
@@ -100,33 +54,47 @@ self.addEventListener("activate", (event) => {
 });
 
 function isAudioRequest(url){
+  /*
+   * GitHub Pages 项目站点通常是：
+   * /仓库名/assets/xxx.m4a
+   *
+   * 旧版要求路径从根目录 assets 开头，因此会判断失败。
+   */
+  return /\.(m4a|mp3|wav|mp4)$/i.test(url.pathname);
+}
+
+function decodedPathname(url){
+  try{
+    return decodeURIComponent(url.pathname);
+  }catch{
+    return url.pathname;
+  }
+}
+
+function isMusicRequest(url){
+  const pathname=decodedPathname(url);
+
   return (
-    url.pathname.startsWith("/assets/")
-    && /\.(m4a|mp3|wav|mp4)$/i.test(url.pathname)
+    pathname.endsWith(
+      "/assets/The people with no name.m4a"
+    )
+    || pathname.endsWith(
+      "/assets/EGO~eyes glazing over.m4a"
+    )
   );
 }
 
-function cacheForUrl(url){
-  if(MUSIC_PATHS.has(url.pathname)){
-    return MUSIC_CACHE;
-  }
-
-  if(isAudioRequest(url)){
-    return AUDIO_CACHE;
-  }
-
-  return APP_CACHE;
+function cacheForAudio(url){
+  return isMusicRequest(url)
+    ? MUSIC_CACHE
+    : AUDIO_CACHE;
 }
 
-async function putInCache(
-  request,
-  response,
-  cacheName
-){
+async function putInCache(request,response,cacheName){
   if(
     !response
     || !response.ok
-    || response.status !== 200
+    || response.status!==200
   ){
     return;
   }
@@ -135,12 +103,8 @@ async function putInCache(
   await cache.put(request,response.clone());
 }
 
-async function cacheFirst(
-  request,
-  cacheName,
-  event
-){
-  const cache=await caches.open(cacheName);
+async function appCacheFirst(request,event){
+  const cache=await caches.open(APP_CACHE);
   const cached=await cache.match(request);
 
   if(cached) return cached;
@@ -148,21 +112,19 @@ async function cacheFirst(
   const response=await fetch(request);
 
   if(response && response.ok){
-    /*
-     * 首次网络响应立即交给页面，
-     * 缓存写入放在 event.waitUntil 中后台完成。
-     */
     event.waitUntil(
-      putInCache(request,response,cacheName)
+      putInCache(request,response,APP_CACHE)
     );
   }
 
   return response;
 }
 
-async function networkFirst(request,event){
+async function navigationNetworkFirst(request,event){
   try{
-    const response=await fetch(request);
+    const response=await fetch(
+      new Request(request,{cache:"reload"})
+    );
 
     if(response && response.ok){
       event.waitUntil(
@@ -181,10 +143,45 @@ async function networkFirst(request,event){
   }
 }
 
-async function createRangeResponse(
-  request,
-  cachedResponse
-){
+async function audioNetworkRefresh(request,event){
+  const url=new URL(request.url);
+  const cacheName=cacheForAudio(url);
+  const cache=await caches.open(cacheName);
+
+  /*
+   * 音频优先从网络强制重新验证，成功后覆盖当前缓存。
+   * 只有网络失败才回退本地音频缓存。
+   */
+  try{
+    const freshRequest=new Request(
+      request,
+      {cache:"reload"}
+    );
+
+    const response=await fetch(freshRequest);
+
+    if(response && response.ok){
+      event.waitUntil(
+        putInCache(request,response,cacheName)
+      );
+
+      return response;
+    }
+  }catch{}
+
+  const cached=await cache.match(request);
+
+  if(cached) return cached;
+
+  return new Response("Audio unavailable",{
+    status:503,
+    headers:{
+      "Content-Type":"text/plain; charset=utf-8"
+    }
+  });
+}
+
+async function createRangeResponse(request,cachedResponse){
   const range=request.headers.get("range");
   const match=/bytes=(\d*)-(\d*)/.exec(range || "");
 
@@ -248,9 +245,6 @@ async function createRangeResponse(
   });
 }
 
-/*
- * 完整歌曲由页面在长按 pointerdown 时发送缓存请求。
- */
 self.addEventListener("message", (event) => {
   const data=event.data;
 
@@ -268,20 +262,16 @@ self.addEventListener("message", (event) => {
 
       if(url.origin!==self.location.origin) return;
 
-      const request=new Request(
+      const fetchRequest=new Request(
         url.href,
-        {method:"GET"}
+        {method:"GET",cache:"reload"}
       );
 
-      const cache=await caches.open(MUSIC_CACHE);
-      const cached=await cache.match(request);
-
-      if(cached) return;
-
       try{
-        const response=await fetch(request);
+        const response=await fetch(fetchRequest);
+
         await putInCache(
-          request,
+          new Request(url.href,{method:"GET"}),
           response,
           MUSIC_CACHE
         );
@@ -297,20 +287,17 @@ self.addEventListener("fetch", (event) => {
   if(url.origin!==self.location.origin) return;
   if(request.method!=="GET") return;
 
-  /*
-   * 页面网络优先，确保 index.html 更新及时。
-   */
   if(request.mode==="navigate"){
     event.respondWith(
-      networkFirst(request,event)
+      navigationNetworkFirst(request,event)
     );
     return;
   }
 
-  /*
-   * 已完整缓存的歌曲支持 Range 响应。
-   */
-  if(request.headers.has("range")){
+  if(
+    request.headers.has("range")
+    && isAudioRequest(url)
+  ){
     event.respondWith(
       (async()=>{
         const fullRequest=new Request(
@@ -318,36 +305,35 @@ self.addEventListener("fetch", (event) => {
           {method:"GET"}
         );
 
-        const musicCache=await caches.open(MUSIC_CACHE);
-        const audioCache=await caches.open(AUDIO_CACHE);
-
-        const cached=
-          await musicCache.match(fullRequest)
-          || await audioCache.match(fullRequest);
+        const cacheName=cacheForAudio(url);
+        const cache=await caches.open(cacheName);
+        const cached=await cache.match(fullRequest);
 
         if(cached){
-          return createRangeResponse(
-            request,
-            cached
-          );
+          return createRangeResponse(request,cached);
         }
 
-        return fetch(request);
+        return fetch(
+          new Request(request,{cache:"reload"})
+        );
       })()
     );
-
     return;
   }
 
-  const cacheName=cacheForUrl(url);
+  /*
+   * 所有音频都进入独立音频缓存，不再误入 APP_CACHE。
+   */
+  if(isAudioRequest(url)){
+    event.respondWith(
+      audioNetworkRefresh(request,event)
+    );
+    return;
+  }
 
   event.respondWith(
-    cacheFirst(
-      request,
-      cacheName,
-      event
-    ).catch(async()=>{
-      const cache=await caches.open(cacheName);
+    appCacheFirst(request,event).catch(async()=>{
+      const cache=await caches.open(APP_CACHE);
       const cached=await cache.match(request);
 
       if(cached) return cached;
