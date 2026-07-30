@@ -396,9 +396,7 @@
     burstMode:      'assets/burst_mode',
     sigleMode:      'assets/sigle_mode',
     burstModeFire:  'assets/burst_mode-fire',
-    sigleModeFire:  'assets/sigle_mode_fire',
-    peopleNoName:   'assets/The people with no name',
-    egoEyes:        'assets/EGO~eyes glazing over'
+    sigleModeFire:  'assets/sigle_mode_fire'
   };
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
   const urlMap = {};
@@ -427,7 +425,7 @@
 
     if(knownUrl){
       try{
-        const res=await fetch(knownUrl,{cache:'no-store'});
+        const res=await fetch(knownUrl);
 
         if(res.ok){
           const arr=await res.arrayBuffer();
@@ -450,7 +448,7 @@
       const url=`${base}${ext}`;
 
       try{
-        const res=await fetch(url,{cache:'no-store'});
+        const res=await fetch(url);
 
         if(!res.ok) continue;
 
@@ -477,19 +475,7 @@
   function play(key,{loop=false}={}){ const b=buffers.get(key); if(!b) return null; const s=ctx().createBufferSource(); s.buffer=b; s.loop=!!loop; s.connect(master); s.start(); return s; }
   function stop(n){ if(n&&n.stop){ try{n.stop();}catch{} } }
 
-  function playWithIndependentGain(key){
-    const b=buffers.get(key);
-    if(!b) return null;
-    const c=ctx();
-    const source=c.createBufferSource();
-    const gain=c.createGain();
-    source.buffer=b;
-    gain.gain.value=1;
-    source.connect(gain);
-    gain.connect(master);
-    source.start();
-    return {source,gain};
-  }
+
 
   /* ------------ 规则/状态 ------------ */
   const COMBOS=['555','106','103'];
@@ -550,18 +536,32 @@
   const MUSIC_LONG_PRESS_MS=500;
   const MUSIC_FADE_OUT_MS=2000;
 
+  /*
+   * 两首完整音乐使用 HTMLAudioElement 流式播放。
+   * 不再在 OPEN PHONE 阶段下载并解码成 AudioBuffer。
+   */
   const musicButtons={
     '0':{
-      key:'peopleNoName',
-      filename:'assets/The people with no name.m4a',
-      timer:null,pointerId:null,longTriggered:false,stopTriggered:false,
-      node:null,gain:null,fading:false
+      url:'assets/The people with no name.m4a',
+      label:'The people with no name',
+      timer:null,
+      pointerId:null,
+      longTriggered:false,
+      stopTriggered:false,
+      audio:null,
+      fadeFrame:null,
+      fading:false
     },
     '7':{
-      key:'egoEyes',
-      filename:'assets/EGO~eyes glazing over.m4a',
-      timer:null,pointerId:null,longTriggered:false,stopTriggered:false,
-      node:null,gain:null,fading:false
+      url:'assets/EGO~eyes glazing over.m4a',
+      label:'EGO~eyes glazing over',
+      timer:null,
+      pointerId:null,
+      longTriggered:false,
+      stopTriggered:false,
+      audio:null,
+      fadeFrame:null,
+      fading:false
     }
   };
 
@@ -596,15 +596,49 @@
   let standNode=null;
 
   /*
-   * 缓存加载方式与 KAIXA 一致：
-   * 必须先点击左下角 OPEN PHONE，
-   * 一次性加载 FAIZ 自己的全部音效。
+   * v35 分阶段加载：
    *
-   * 注意：这里只复用缓存加载方式，
-   * 不复制 KAIXA 的任何模式音效或交互规则。
+   * 1. OPEN PHONE 只等待 openPhone，加载完成后立即播放。
+   * 2. 随后分批准备会被同步调用的常用短音效。
+   * 3. 页面可操作后，再利用空闲时间加载低频短音效。
+   * 4. 两首完整音乐不进入 AudioBuffer，长按时才流式播放。
    */
   let audioReady=false;
   let audioLoading=false;
+  let backgroundPreloadStarted=false;
+
+  const ESSENTIAL_AUDIO_KEYS=[
+    'ring',
+    'enter',
+    'key1',
+    'key5_2',
+    'key5_3',
+    'standBy',
+    'complete',
+    'error',
+    'ready',
+    'sReady',
+    'exceed',
+    'release',
+    'combo3821',
+    'weaponHit',
+    'qj'
+  ];
+
+  const BACKGROUND_AUDIO_KEYS=[
+    'readyMetal',
+    'exceed2',
+    'weaponHit2',
+    'faizSeed',
+    'seedEnd',
+    'startup',
+    'seeding',
+    'seeding2',
+    'burstMode',
+    'sigleMode',
+    'burstModeFire',
+    'sigleModeFire'
+  ];
 
   function stageOf(s){
     for(const c of COMBOS){
@@ -783,43 +817,117 @@
     document.getElementById('popup1').classList.remove('show');
   }
 
-  async function ensureReady(){
+  function waitForIdle(){
+    return new Promise((resolve)=>{
+      if('requestIdleCallback' in window){
+        window.requestIdleCallback(()=>resolve(),{timeout:350});
+      }else{
+        setTimeout(resolve,60);
+      }
+    });
+  }
+
+  async function preloadAudioKeys(keys,{batchSize=3,useIdle=false}={}){
+    for(let i=0;i<keys.length;i+=batchSize){
+      const batch=keys.slice(i,i+batchSize);
+
+      await Promise.all(
+        batch.map((key)=>load(key).catch((error)=>{
+          console.warn(`${key} 后台加载失败：`,error);
+          return null;
+        }))
+      );
+
+      if(useIdle && i+batchSize<keys.length){
+        await waitForIdle();
+      }
+    }
+  }
+
+  function startBackgroundAudioPreload(){
+    if(backgroundPreloadStarted) return;
+    backgroundPreloadStarted=true;
+
+    /*
+     * 不阻塞界面，也不等待结果。
+     * 低频短音效按小批次在后台解码。
+     */
+    void preloadAudioKeys(
+      BACKGROUND_AUDIO_KEYS,
+      {batchSize:3,useIdle:true}
+    );
+  }
+
+  async function resumeAudioContext(){
     const c=ctx();
 
     try{
-      if(c.state==='suspended') await c.resume();
+      if(c.state==='suspended'){
+        await c.resume();
+      }
     }catch{}
 
-    if(audioReady) return true;
-    if(audioLoading) return false;
+    return c;
+  }
 
+  async function onOpenPhone(){
+    await resumeAudioContext();
+
+    /*
+     * 已经完成基础准备时，开机音直接从内存播放。
+     */
+    if(audioReady){
+      interruptRing();
+
+      if(!buffers.has('openPhone')){
+        await load('openPhone');
+      }
+
+      play('openPhone');
+      return;
+    }
+
+    if(audioLoading) return;
     audioLoading=true;
 
     const openButton=document.getElementById('btnOpenPhone');
     const oldText=openButton.textContent;
-    openButton.textContent='LOADING…';
+
+    openButton.textContent='OPENING…';
     openButton.disabled=true;
 
     try{
-      await Promise.all(
-        Object.keys(BASE).map(k=>load(k).catch(()=>null))
+      /*
+       * 只等待开机音。
+       * 它加载完成后立刻播放，不再等待全部音效。
+       */
+      const openPhoneBuffer=await load('openPhone');
+
+      if(!openPhoneBuffer){
+        console.warn('未找到 open phone 音效');
+        return;
+      }
+
+      interruptRing();
+      play('openPhone');
+
+      /*
+       * 开机音已经响起，再准备常用短音效。
+       */
+      openButton.textContent='PREPARING…';
+
+      await preloadAudioKeys(
+        ESSENTIAL_AUDIO_KEYS,
+        {batchSize:4,useIdle:false}
       );
 
       audioReady=true;
-      return true;
+      startBackgroundAudioPreload();
     }finally{
       audioLoading=false;
       openButton.textContent=oldText;
       openButton.disabled=false;
     }
-  }
-
-  async function onOpenPhone(){
-    const ok=await ensureReady();
-    if(!ok && !audioReady) return;
-
-    interruptRing();
-    play('openPhone');
   }
 
   function playSequence(keys,onDone=null){
@@ -1017,73 +1125,125 @@
     }
   }
 
-  function clearMusicPlaybackState(state,source=null){
-    if(source && state.node!==source) return;
-    state.node=null;
-    state.gain=null;
+  function clearMusicPlaybackState(state,audio=null){
+    if(audio && state.audio!==audio) return;
+
+    if(state.fadeFrame){
+      cancelAnimationFrame(state.fadeFrame);
+      state.fadeFrame=null;
+    }
+
+    state.audio=null;
     state.fading=false;
+  }
+
+  function warmMusicCache(url){
+    /*
+     * 音乐开始播放后，通知 Service Worker 在后台保存完整文件。
+     * 这个过程不阻塞播放，也不拖慢 OPEN PHONE。
+     */
+    if(!('serviceWorker' in navigator)) return;
+
+    navigator.serviceWorker.ready
+      .then((registration)=>{
+        const worker=navigator.serviceWorker.controller || registration.active;
+
+        if(worker){
+          worker.postMessage({
+            type:'CACHE_MEDIA',
+            url:new URL(url,window.location.href).href
+          });
+        }
+      })
+      .catch(()=>{});
   }
 
   async function startLongPressMusic(k){
     const state=musicButtons[k];
-    if(!state || !audioReady || state.node || state.fading) return;
+
+    if(!state || !audioReady || state.audio || state.fading) return;
 
     interruptRing();
 
-    const loaded=await ensureSoundLoaded(state.key);
-    if(!loaded){
-      console.warn(`未找到 ${state.filename}`);
-      return;
-    }
-    if(state.node || state.fading) return;
+    const audio=new Audio(state.url);
 
-    const playback=playWithIndependentGain(state.key);
-    if(!playback){
-      console.warn(`${state.key} 无法播放`);
-      return;
-    }
+    audio.preload='auto';
+    audio.volume=1;
+    audio.loop=false;
+    audio.playsInline=true;
 
-    state.node=playback.source;
-    state.gain=playback.gain;
+    state.audio=audio;
     state.fading=false;
 
-    const source=playback.source;
-    source.onended=()=>{
-      clearMusicPlaybackState(state,source);
-    };
+    audio.addEventListener('ended',()=>{
+      clearMusicPlaybackState(state,audio);
+    },{once:true});
+
+    audio.addEventListener('error',()=>{
+      console.warn(`${state.label} 加载或播放失败`);
+      clearMusicPlaybackState(state,audio);
+    },{once:true});
+
+    /*
+     * 后台缓存完整音乐，后续启动优先读取本地缓存。
+     */
+    warmMusicCache(state.url);
+
+    try{
+      await audio.play();
+    }catch(error){
+      console.warn(`${state.label} 无法播放：`,error);
+      clearMusicPlaybackState(state,audio);
+    }
   }
 
   function fadeOutLongPressMusic(k){
     const state=musicButtons[k];
-    if(!state || !state.node || !state.gain) return false;
+
+    if(!state || !state.audio) return false;
     if(state.fading) return true;
 
     state.fading=true;
-    const source=state.node;
-    const gain=state.gain;
-    const c=ctx();
-    const now=c.currentTime;
-    const endAt=now+(MUSIC_FADE_OUT_MS/1000);
 
-    try{
-      gain.gain.cancelScheduledValues(now);
-      gain.gain.setValueAtTime(Math.max(0.0001,gain.gain.value),now);
-      gain.gain.linearRampToValueAtTime(0.0001,endAt);
-    }catch{}
+    const audio=state.audio;
+    const startVolume=Math.max(0,audio.volume);
+    const startAt=performance.now();
 
-    setTimeout(()=>{
-      if(state.node===source){
-        source.onended=null;
-        stop(source);
-        clearMusicPlaybackState(state,source);
+    const step=(now)=>{
+      if(state.audio!==audio) return;
+
+      const progress=Math.min(
+        1,
+        (now-startAt)/MUSIC_FADE_OUT_MS
+      );
+
+      audio.volume=Math.max(
+        0,
+        startVolume*(1-progress)
+      );
+
+      if(progress<1){
+        state.fadeFrame=requestAnimationFrame(step);
+        return;
       }
-    },MUSIC_FADE_OUT_MS+80);
 
+      state.fadeFrame=null;
+
+      try{
+        audio.pause();
+        audio.currentTime=0;
+      }catch{}
+
+      clearMusicPlaybackState(state,audio);
+    };
+
+    state.fadeFrame=requestAnimationFrame(step);
     return true;
   }
 
   function onMusicButtonPointerDown(k,event){
     const state=musicButtons[k];
+
     if(!state) return;
     if(event.pointerType==='mouse' && event.button!==0) return;
     if(state.pointerId!==null) return;
@@ -1092,9 +1252,15 @@
     state.longTriggered=false;
     state.stopTriggered=false;
 
-    try{ event.currentTarget.setPointerCapture(event.pointerId); }catch{}
+    try{
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }catch{}
 
-    if(state.node || state.fading){
+    /*
+     * 音乐播放期间再次按同一个按钮：
+     * 立刻开始淡出，这次按键不触发普通数字。
+     */
+    if(state.audio || state.fading){
       state.stopTriggered=true;
       fadeOutLongPressMusic(k);
       return;
@@ -1103,10 +1269,13 @@
     if(!audioReady) return;
 
     clearMusicPressTimer(state);
+
     state.timer=setTimeout(()=>{
       state.timer=null;
+
       if(state.pointerId!==event.pointerId) return;
-      if(state.node || state.fading) return;
+      if(state.audio || state.fading) return;
+
       state.longTriggered=true;
       startLongPressMusic(k);
     },MUSIC_LONG_PRESS_MS);
@@ -1114,16 +1283,20 @@
 
   function finishMusicButtonPointer(k,event,{cancelled=false}={}){
     const state=musicButtons[k];
+
     if(!state || state.pointerId!==event.pointerId) return;
 
     clearMusicPressTimer(state);
+
     const handled=state.longTriggered || state.stopTriggered;
 
     state.pointerId=null;
     state.longTriggered=false;
     state.stopTriggered=false;
 
-    try{ event.currentTarget.releasePointerCapture(event.pointerId); }catch{}
+    try{
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }catch{}
 
     if(!cancelled && !handled){
       pressDigit(k);
@@ -1134,25 +1307,37 @@
     const button=document.getElementById(id);
     const state=musicButtons[k];
 
-    button.addEventListener('pointerdown',(event)=>onMusicButtonPointerDown(k,event));
+    button.addEventListener('pointerdown',(event)=>{
+      onMusicButtonPointerDown(k,event);
+    });
+
     button.addEventListener('pointerup',(event)=>{
       event.preventDefault();
       finishMusicButtonPointer(k,event);
     });
+
     button.addEventListener('pointercancel',(event)=>{
       finishMusicButtonPointer(k,event,{cancelled:true});
     });
+
     button.addEventListener('lostpointercapture',()=>{
       clearMusicPressTimer(state);
       state.pointerId=null;
       state.longTriggered=false;
       state.stopTriggered=false;
     });
-    button.addEventListener('contextmenu',(event)=>event.preventDefault());
+
+    button.addEventListener('contextmenu',(event)=>{
+      event.preventDefault();
+    });
+
     button.addEventListener('click',(event)=>{
       if(event.detail===0){
-        if(state.node || state.fading) fadeOutLongPressMusic(k);
-        else pressDigit(k);
+        if(state.audio || state.fading){
+          fadeOutLongPressMusic(k);
+        }else{
+          pressDigit(k);
+        }
       }else{
         event.preventDefault();
       }
