@@ -482,7 +482,56 @@
     sigleModeFire:  'assets/sigle_mode_fire'
   };
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
-  const urlMap = {};
+
+  const AUDIO_URL_MAP_STORAGE_KEY='faiz_audio_url_map_v2';
+
+  const urlMap=(()=>{
+    try{
+      const saved=localStorage.getItem(AUDIO_URL_MAP_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    }catch{
+      return {};
+    }
+  })();
+
+  const loadPromises=new Map();
+  const warmDownloadPromises=new Map();
+  const audioLoadStatus=new Map();
+
+  function persistAudioUrlMap(){
+    try{
+      localStorage.setItem(
+        AUDIO_URL_MAP_STORAGE_KEY,
+        JSON.stringify(urlMap)
+      );
+    }catch{}
+  }
+
+  function setAudioStatus(key,status,url=null){
+    audioLoadStatus.set(key,{
+      status,
+      url:url || urlMap[BASE[key]] || null,
+      updatedAt:Date.now()
+    });
+  }
+
+  window.faizAudioStatus=()=>{
+    const report={};
+
+    Object.keys(BASE).forEach((key)=>{
+      const state=audioLoadStatus.get(key);
+
+      report[key]={
+        state:buffers.has(key)
+          ? 'decoded'
+          : state?.status || 'not-requested',
+        url:state?.url || urlMap[BASE[key]] || null
+      };
+    });
+
+    console.table(report);
+    return report;
+  };
 
   let ac=null, master=null;
   const buffers=new Map();
@@ -495,66 +544,159 @@
    * 现在会直接逐个尝试 GET：
    * .m4a → .mp3 → .wav → .mp4
    */
-  async function load(key){
-    if(buffers.has(key)) return buffers.get(key);
-
+  async function fetchKnownOrProbeAudio(key){
     const base=BASE[key];
+
     if(!base) return null;
 
-    /*
-     * 已经解析过真实地址时优先直接读取。
-     */
     const knownUrl=urlMap[base];
 
     if(knownUrl){
       try{
-        const res=await fetch(knownUrl);
+        const response=await fetch(knownUrl);
 
-        if(res.ok){
-          const arr=await res.arrayBuffer();
-          const b=await ctx().decodeAudioData(arr.slice(0));
-          buffers.set(key,b);
-          return b;
+        if(response.ok){
+          return {url:knownUrl,response};
         }
       }catch(error){
-        console.warn(`${key} 已记录地址读取失败，重新探测：`,error);
+        console.warn(
+          `${key} 已记录地址读取失败，重新探测：`,
+          error
+        );
       }
 
       delete urlMap[base];
+      persistAudioUrlMap();
     }
 
-    /*
-     * 直接 GET 每一种扩展名。
-     * 只有真实取得并成功解码的文件才算加载成功。
-     */
     for(const ext of EXT){
       const url=`${base}${ext}`;
 
       try{
-        const res=await fetch(url);
+        const response=await fetch(url);
 
-        if(!res.ok) continue;
-
-        const arr=await res.arrayBuffer();
-
-        if(!arr || arr.byteLength===0) continue;
-
-        const b=await ctx().decodeAudioData(arr.slice(0));
+        if(!response.ok) continue;
 
         urlMap[base]=url;
-        buffers.set(key,b);
+        persistAudioUrlMap();
 
-        return b;
-      }catch(error){
-        /*
-         * 当前扩展名失败时继续尝试下一种，
-         * 不让一个 404 或解码失败终止整个加载过程。
-         */
-      }
+        return {url,response};
+      }catch{}
     }
 
     return null;
   }
+
+  /*
+   * 只下载并放入 Service Worker 的短音效缓存，不解码。
+   * 后续真正使用时，解码会从本地音频缓存读取。
+   */
+  async function warmDownloadAudio(key){
+    if(buffers.has(key)){
+      setAudioStatus(key,'decoded');
+      return true;
+    }
+
+    if(warmDownloadPromises.has(key)){
+      return warmDownloadPromises.get(key);
+    }
+
+    const task=(async()=>{
+      setAudioStatus(key,'downloading');
+
+      const found=await fetchKnownOrProbeAudio(key);
+
+      if(!found){
+        setAudioStatus(key,'missing');
+        return false;
+      }
+
+      /*
+       * 消费响应以确保浏览器完成本次读取。
+       * Service Worker 会把相同响应保存进独立音频缓存。
+       */
+      try{
+        await found.response.arrayBuffer();
+      }catch{
+        setAudioStatus(key,'download-error',found.url);
+        return false;
+      }
+
+      setAudioStatus(key,'downloaded',found.url);
+      return true;
+    })();
+
+    warmDownloadPromises.set(key,task);
+
+    try{
+      return await task;
+    }finally{
+      warmDownloadPromises.delete(key);
+    }
+  }
+
+  /*
+   * 真正播放前才解码。
+   * loadPromises 防止快速连续点击造成同一文件重复 fetch / decode。
+   */
+  async function load(key){
+    if(buffers.has(key)){
+      setAudioStatus(key,'decoded');
+      return buffers.get(key);
+    }
+
+    if(loadPromises.has(key)){
+      return loadPromises.get(key);
+    }
+
+    const task=(async()=>{
+      setAudioStatus(key,'decoding');
+
+      /*
+       * 若该音效正在进行“只下载”任务，先等下载完成。
+       * 随后的 fetch 将直接命中 Service Worker 音频缓存。
+       */
+      if(warmDownloadPromises.has(key)){
+        await warmDownloadPromises.get(key);
+      }
+
+      const found=await fetchKnownOrProbeAudio(key);
+
+      if(!found){
+        setAudioStatus(key,'missing');
+        return null;
+      }
+
+      try{
+        const arr=await found.response.arrayBuffer();
+
+        if(!arr || arr.byteLength===0){
+          setAudioStatus(key,'empty',found.url);
+          return null;
+        }
+
+        const buffer=await ctx().decodeAudioData(arr.slice(0));
+
+        buffers.set(key,buffer);
+        setAudioStatus(key,'decoded',found.url);
+
+        return buffer;
+      }catch(error){
+        console.warn(`${key} 解码失败：`,error);
+        setAudioStatus(key,'decode-error',found.url);
+        return null;
+      }
+    })();
+
+    loadPromises.set(key,task);
+
+    try{
+      return await task;
+    }finally{
+      loadPromises.delete(key);
+    }
+  }
+
   function play(key,{loop=false}={}){ const b=buffers.get(key); if(!b) return null; const s=ctx().createBufferSource(); s.buffer=b; s.loop=!!loop; s.connect(master); s.start(); return s; }
   function stop(n){ if(n&&n.stop){ try{n.stop();}catch{} } }
 
@@ -642,6 +784,7 @@
       longTriggered:false,
       stopTriggered:false,
       audio:null,
+      preloadAudio:null,
       fadeFrame:null,
       fading:false
     },
@@ -653,6 +796,7 @@
       longTriggered:false,
       stopTriggered:false,
       audio:null,
+      preloadAudio:null,
       fadeFrame:null,
       fading:false
     }
@@ -750,8 +894,15 @@
    */
   let audioReady=false;
   let audioLoading=false;
-  let backgroundPreloadStarted=false;
 
+  let auxiliaryPreloadStarted=false;
+  let top1RoutePreloadStarted=false;
+  let popup1PreloadStarted=false;
+
+  /*
+   * OPEN PHONE 后立即解码。
+   * 这些是主界面最常用且需要同步响应的短音效。
+   */
   const ESSENTIAL_AUDIO_KEYS=[
     'ring',
     'enter',
@@ -767,30 +918,56 @@
     'release',
     'combo3821',
     'weaponHit',
-    'qj'
+    'qj',
+    'seedEnd'
   ];
 
-  const BACKGROUND_AUDIO_KEYS=[
+  /*
+   * OPEN PHONE 完成后利用空闲时间准备。
+   * 与 TOP1 弹框无关，避免它们阻塞基础操作。
+   */
+  const AUXILIARY_AUDIO_KEYS=[
     'readyMetal',
     'exceed2',
     'weaponHit2',
+    'burstMode',
+    'sigleMode',
+    'burstModeFire',
+    'sigleModeFire'
+  ];
+
+  /*
+   * complete 完成后再准备 TOP1 主路线。
+   */
+  const TOP1_ROUTE_AUDIO_KEYS=[
     'faizSeed',
     'seedEnd',
     'startup',
     'seeding',
     'seeding2',
     'seeding3',
-    'seeding4',
+    'seeding4'
+  ];
+
+  /*
+   * POPUP1 打开后才准备 BTN3～BTN8 专用音效。
+   */
+  const POPUP1_AUDIO_KEYS=[
     'seedHit',
     'kickLine',
     'seedRun',
     'seedHit2',
     'kick',
-    'kickEnd',
-    'burstMode',
-    'sigleMode',
-    'burstModeFire',
-    'sigleModeFire'
+    'kickEnd'
+  ];
+
+  /*
+   * 退出 Seed 模式后释放这些低频 AudioBuffer。
+   * 文件仍保留在 Service Worker 音频缓存中，
+   * 下次只需本地重新解码，不会重新联网下载。
+   */
+  const RELEASABLE_POPUP1_AUDIO_KEYS=[
+    ...POPUP1_AUDIO_KEYS
   ];
 
   function stageOf(s){
@@ -871,6 +1048,12 @@
 
     resetStandBy();
     buf='';
+
+    /*
+     * 变身完成后再准备 TOP1 路线，
+     * 不让 TOP1 专用音效拖慢 OPEN PHONE。
+     */
+    startTop1RouteAudioPreload();
   }
 
   function resetCompleteState(){
@@ -1361,6 +1544,13 @@
      */
     stopKickSequence({resetCount:true});
     resetPopup1SoundButtonLocks();
+
+    /*
+     * 释放低频弹框音效的解码内存。
+     * Service Worker 下载缓存仍然保留。
+     */
+    releaseDecodedAudio(RELEASABLE_POPUP1_AUDIO_KEYS);
+    popup1PreloadStarted=false;
   }
 
 
@@ -1490,20 +1680,48 @@
   function waitForIdle(){
     return new Promise((resolve)=>{
       if('requestIdleCallback' in window){
-        window.requestIdleCallback(()=>resolve(),{timeout:350});
+        window.requestIdleCallback(
+          ()=>resolve(),
+          {timeout:350}
+        );
       }else{
         setTimeout(resolve,60);
       }
     });
   }
 
-  async function preloadAudioKeys(keys,{batchSize=3,useIdle=false}={}){
+  async function warmAudioKeys(
+    keys,
+    {batchSize=3,useIdle=false}={}
+  ){
+    for(let i=0;i<keys.length;i+=batchSize){
+      const batch=keys.slice(i,i+batchSize);
+
+      await Promise.all(
+        batch.map((key)=>
+          warmDownloadAudio(key).catch((error)=>{
+            console.warn(`${key} 下载缓存失败：`,error);
+            return false;
+          })
+        )
+      );
+
+      if(useIdle && i+batchSize<keys.length){
+        await waitForIdle();
+      }
+    }
+  }
+
+  async function preloadAudioKeys(
+    keys,
+    {batchSize=3,useIdle=false}={}
+  ){
     for(let i=0;i<keys.length;i+=batchSize){
       const batch=keys.slice(i,i+batchSize);
 
       await Promise.all(
         batch.map((key)=>load(key).catch((error)=>{
-          console.warn(`${key} 后台加载失败：`,error);
+          console.warn(`${key} 后台解码失败：`,error);
           return null;
         }))
       );
@@ -1514,18 +1732,63 @@
     }
   }
 
-  function startBackgroundAudioPreload(){
-    if(backgroundPreloadStarted) return;
-    backgroundPreloadStarted=true;
-
-    /*
-     * 不阻塞界面，也不等待结果。
-     * 低频短音效按小批次在后台解码。
-     */
-    void preloadAudioKeys(
-      BACKGROUND_AUDIO_KEYS,
-      {batchSize:3,useIdle:true}
+  async function warmThenDecodeAudioKeys(
+    keys,
+    {batchSize=3}={}
+  ){
+    await warmAudioKeys(
+      keys,
+      {batchSize,useIdle:true}
     );
+
+    await waitForIdle();
+
+    await preloadAudioKeys(
+      keys,
+      {batchSize,useIdle:true}
+    );
+  }
+
+  function startAuxiliaryAudioPreload(){
+    if(auxiliaryPreloadStarted) return;
+    auxiliaryPreloadStarted=true;
+
+    void warmThenDecodeAudioKeys(
+      AUXILIARY_AUDIO_KEYS,
+      {batchSize:2}
+    );
+  }
+
+  function startTop1RouteAudioPreload(){
+    if(top1RoutePreloadStarted) return;
+    top1RoutePreloadStarted=true;
+
+    void warmThenDecodeAudioKeys(
+      TOP1_ROUTE_AUDIO_KEYS,
+      {batchSize:2}
+    );
+  }
+
+  function startPopup1AudioPreload(){
+    if(popup1PreloadStarted) return;
+    popup1PreloadStarted=true;
+
+    void warmThenDecodeAudioKeys(
+      POPUP1_AUDIO_KEYS,
+      {batchSize:2}
+    );
+  }
+
+  function releaseDecodedAudio(keys){
+    keys.forEach((key)=>{
+      /*
+       * 当前仍在播放的序列不会经过这里被释放。
+       * Seed 模式结束后才调用本函数。
+       */
+      if(buffers.delete(key)){
+        setAudioStatus(key,'downloaded');
+      }
+    });
   }
 
   async function resumeAudioContext(){
@@ -1592,7 +1855,7 @@
       );
 
       audioReady=true;
-      startBackgroundAudioPreload();
+      startAuxiliaryAudioPreload();
     }finally{
       audioLoading=false;
       openButton.textContent=oldText;
@@ -1828,6 +2091,28 @@
       .catch(()=>{});
   }
 
+  function prepareLongPressMusic(k){
+    const state=musicButtons[k];
+
+    if(!state || state.audio || state.preloadAudio) return;
+
+    const audio=new Audio(state.url);
+
+    audio.preload='auto';
+    audio.playsInline=true;
+
+    try{
+      audio.load();
+    }catch{}
+
+    state.preloadAudio=audio;
+
+    /*
+     * 长按倒计时期间同步通知 Service Worker 缓存完整歌曲。
+     */
+    warmMusicCache(state.url);
+  }
+
   async function startLongPressMusic(k){
     const state=musicButtons[k];
 
@@ -1835,7 +2120,8 @@
 
     interruptRing();
 
-    const audio=new Audio(state.url);
+    const audio=state.preloadAudio || new Audio(state.url);
+    state.preloadAudio=null;
 
     audio.preload='auto';
     audio.volume=1;
@@ -1937,6 +2223,11 @@
     }
 
     if(!audioReady) return;
+
+    /*
+     * 0.5 秒长按倒计时期间提前建立流式音频并开始缓存。
+     */
+    prepareLongPressMusic(k);
 
     clearMusicPressTimer(state);
 
@@ -2098,6 +2389,11 @@
      * 松手时仍执行原来的普通 ENTER。
      */
     if(!canTriggerEnterLongPress()) return;
+
+    /*
+     * 长按倒计时期间提前解码 exceed charge2。
+     */
+    void ensureSoundLoaded('exceed2');
 
     clearEnterPressTimer();
 
@@ -2356,6 +2652,11 @@
      */
     if(!audioReady || !transformed) return;
 
+    /*
+     * 长按倒计时期间提前解码 weaponhit2。
+     */
+    void ensureSoundLoaded('weaponHit2');
+
     clearHashPressTimer();
 
     hashPressTimer=setTimeout(()=>{
@@ -2458,6 +2759,7 @@
    * TOP1 Seed 模式：
    *
    * 变身完成后第一次按 TOP1：
+   * - 预加载 faiz-seed 与 seed-end
    * - 播放 faiz-seed
    * - 打开 popup1
    *
@@ -2473,25 +2775,52 @@
     if(seedEndPlaying) return;
     if(faizSeedLoading) return;
 
+    /*
+     * 移动端 PWA 可能会在页面切换或停留后暂停 AudioContext。
+     * TOP1 是明确的用户点击，因此这里主动恢复音频上下文。
+     */
+    const audioContext=ctx();
+
+    if(audioContext.state==='suspended'){
+      try{
+        await audioContext.resume();
+      }catch(error){
+        console.warn('AudioContext 恢复失败：',error);
+      }
+    }
+
     interruptRing();
 
     const popup1=document.getElementById('popup1');
     const popup4=document.getElementById('popup4');
 
     /*
-     * 第一次按 TOP1：开启新一轮 Seed 模式。
+     * 第一次按 TOP1：
+     * 同时准备 faiz-seed 和 seed-end。
+     *
+     * 这样第二次按 TOP1 时 seed-end 已经在 AudioBuffer 中，
+     * 不需要在用户点击后再等待 fetch / decode。
      */
     if(!faizSeedActive){
+      startTop1RouteAudioPreload();
       faizSeedLoading=true;
       popup1SoundSessionToken+=1;
       stopKickSequence({resetCount:true});
       resetPopup1SoundButtonLocks();
 
       try{
-        const loaded=await ensureSoundLoaded('faizSeed');
+        const [faizSeedLoaded,seedEndLoaded]=await Promise.all([
+          ensureSoundLoaded('faizSeed'),
+          ensureSoundLoaded('seedEnd')
+        ]);
 
-        if(!loaded){
+        if(!faizSeedLoaded){
           console.warn('未找到 assets/faiz-seed.m4a');
+          return;
+        }
+
+        if(!seedEndLoaded){
+          console.warn('未找到 assets/seed-end.m4a');
           return;
         }
 
@@ -2505,6 +2834,11 @@
         popup4.classList.remove('show');
         popup1.classList.add('show');
         faizSeedActive=true;
+
+        /*
+         * 用户已经进入 POPUP1，再准备 BTN3～BTN8 专用音效。
+         */
+        startPopup1AudioPreload();
       }finally{
         faizSeedLoading=false;
       }
@@ -2513,26 +2847,29 @@
     }
 
     /*
-     * 再按 TOP1：
-     * 立即终止 BTN2 的 seeding2 / seeding4 循环，
-     * 关闭 POPUP1，然后播放 seed-end。
-     * 按钮锁定要等 seed-end 播放完成后才解除。
+     * 第二次按 TOP1：
+     * seed-end 已在第一次 TOP1 时预加载完成，
+     * 所以此处不再 await 网络请求，直接同步播放。
      */
     stopSeeding();
     popup1SoundSessionToken+=1;
     stopKickSequence({resetCount:false});
     popup1.classList.remove('show');
 
-    seedEndPlaying=true;
-    faizSeedLoading=true;
+    const seedEndBuffer=buffers.get('seedEnd');
 
-    const loaded=await ensureSoundLoaded('seedEnd');
+    if(!seedEndBuffer){
+      console.warn(
+        'seed-end 缓冲不存在，已结束本轮 Seed 模式'
+      );
 
-    if(!loaded){
-      console.warn('未找到 assets/seed-end.m4a');
+      seedEndPlaying=true;
       finishSeedEnd();
       return;
     }
+
+    seedEndPlaying=true;
+    faizSeedLoading=true;
 
     const endNode=play('seedEnd');
 
@@ -2545,14 +2882,10 @@
     seedEndNode=endNode;
     seedEndNode.onended=finishSeedEnd;
 
-    const seedEndBuffer=buffers.get('seedEnd');
-
-    if(seedEndBuffer){
-      seedEndTimer=setTimeout(
-        finishSeedEnd,
-        Math.ceil((seedEndBuffer.duration+0.08)*1000)
-      );
-    }
+    seedEndTimer=setTimeout(
+      finishSeedEnd,
+      Math.ceil((seedEndBuffer.duration+0.08)*1000)
+    );
   }
 
   /*
@@ -2653,6 +2986,14 @@
 
     if(!audioReady) return;
     if(!faizSeedUnlocked || !faizSeedActive) return;
+
+    /*
+     * 利用 0.5 秒长按等待提前解码 seeding3 / seeding4。
+     */
+    void preloadAudioKeys(
+      ['seeding3','seeding4'],
+      {batchSize:2,useIdle:false}
+    );
 
     clearPopup1Btn2PressTimer();
 
@@ -2816,6 +3157,11 @@
      * 松手后短按函数也会自行拒绝执行。
      */
     if(!audioReady || !transformed) return;
+
+    /*
+     * 长按倒计时期间提前解码 ready-metal。
+     */
+    void ensureSoundLoaded('readyMetal');
 
     clearTop2PressTimer();
 

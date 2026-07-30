@@ -1,4 +1,6 @@
-const CACHE_NAME = "faiz-pwa-v43";
+const APP_CACHE = "faiz-app-v45";
+const AUDIO_CACHE = "faiz-audio-v1";
+const MUSIC_CACHE = "faiz-music-v1";
 
 const CORE_ASSETS = [
   "./",
@@ -10,8 +12,9 @@ const CORE_ASSETS = [
 ];
 
 /*
- * OPEN PHONE 后会同步使用的常用短音效。
- * 安装后尽量在后台提前保存，后续启动直接从本地读取。
+ * 只在安装阶段预热最常用的短音效。
+ * 后续新增代码版本不会清空 AUDIO_CACHE，
+ * 除非显式升级 AUDIO_CACHE 的版本号。
  */
 const ESSENTIAL_AUDIO = [
   "./assets/open phone.m4a",
@@ -29,19 +32,31 @@ const ESSENTIAL_AUDIO = [
   "./assets/release.m4a",
   "./assets/3821.m4a",
   "./assets/weaponHit.m4a",
-  "./assets/qj.m4a"
+  "./assets/qj.m4a",
+  "./assets/seed-end.m4a"
 ];
+
+const MUSIC_PATHS = new Set([
+  "/assets/The people with no name.m4a",
+  "/assets/EGO~eyes glazing over.m4a"
+]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(async (cache) => {
-        await Promise.allSettled(
-          [...CORE_ASSETS, ...ESSENTIAL_AUDIO]
-            .map((url) => cache.add(url))
-        );
-      })
-      .then(() => self.skipWaiting())
+    Promise.all([
+      caches.open(APP_CACHE)
+        .then((cache) =>
+          Promise.allSettled(
+            CORE_ASSETS.map((url) => cache.add(url))
+          )
+        ),
+      caches.open(AUDIO_CACHE)
+        .then((cache) =>
+          Promise.allSettled(
+            ESSENTIAL_AUDIO.map((url) => cache.add(url))
+          )
+        )
+    ]).then(() => self.skipWaiting())
   );
 });
 
@@ -51,7 +66,32 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_NAME)
+            .filter((key) => {
+              if(key.startsWith("faiz-pwa-")) return true;
+
+              if(
+                key.startsWith("faiz-app-")
+                && key !== APP_CACHE
+              ){
+                return true;
+              }
+
+              if(
+                key.startsWith("faiz-audio-")
+                && key !== AUDIO_CACHE
+              ){
+                return true;
+              }
+
+              if(
+                key.startsWith("faiz-music-")
+                && key !== MUSIC_CACHE
+              ){
+                return true;
+              }
+
+              return false;
+            })
             .map((key) => caches.delete(key))
         )
       )
@@ -59,39 +99,92 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-async function putInCache(request, response) {
-  if(!response || !response.ok || response.status !== 200) return;
+function isAudioRequest(url){
+  return (
+    url.pathname.startsWith("/assets/")
+    && /\.(m4a|mp3|wav|mp4)$/i.test(url.pathname)
+  );
+}
 
-  const cache=await caches.open(CACHE_NAME);
+function cacheForUrl(url){
+  if(MUSIC_PATHS.has(url.pathname)){
+    return MUSIC_CACHE;
+  }
+
+  if(isAudioRequest(url)){
+    return AUDIO_CACHE;
+  }
+
+  return APP_CACHE;
+}
+
+async function putInCache(
+  request,
+  response,
+  cacheName
+){
+  if(
+    !response
+    || !response.ok
+    || response.status !== 200
+  ){
+    return;
+  }
+
+  const cache=await caches.open(cacheName);
   await cache.put(request,response.clone());
 }
 
-async function cacheFirst(request) {
-  const cached=await caches.match(request);
+async function cacheFirst(
+  request,
+  cacheName,
+  event
+){
+  const cache=await caches.open(cacheName);
+  const cached=await cache.match(request);
 
   if(cached) return cached;
 
   const response=await fetch(request);
-  await putInCache(request,response);
+
+  if(response && response.ok){
+    /*
+     * 首次网络响应立即交给页面，
+     * 缓存写入放在 event.waitUntil 中后台完成。
+     */
+    event.waitUntil(
+      putInCache(request,response,cacheName)
+    );
+  }
 
   return response;
 }
 
-async function networkFirst(request) {
+async function networkFirst(request,event){
   try{
     const response=await fetch(request);
-    await putInCache(request,response);
+
+    if(response && response.ok){
+      event.waitUntil(
+        putInCache(request,response,APP_CACHE)
+      );
+    }
+
     return response;
   }catch{
-    const cached=await caches.match(request);
+    const cache=await caches.open(APP_CACHE);
+    const cached=await cache.match(request);
 
     if(cached) return cached;
 
-    return caches.match("./index.html");
+    return cache.match("./index.html");
   }
 }
 
-async function createRangeResponse(request,cachedResponse) {
+async function createRangeResponse(
+  request,
+  cachedResponse
+){
   const range=request.headers.get("range");
   const match=/bytes=(\d*)-(\d*)/.exec(range || "");
 
@@ -119,11 +212,11 @@ async function createRangeResponse(request,cachedResponse) {
   }
 
   if(
-    !Number.isFinite(start) ||
-    !Number.isFinite(end) ||
-    start<0 ||
-    start>=size ||
-    end<start
+    !Number.isFinite(start)
+    || !Number.isFinite(end)
+    || start<0
+    || start>=size
+    || end<start
   ){
     return new Response(null,{
       status:416,
@@ -139,8 +232,14 @@ async function createRangeResponse(request,cachedResponse) {
   const headers=new Headers(cachedResponse.headers);
 
   headers.set("Accept-Ranges","bytes");
-  headers.set("Content-Range",`bytes ${start}-${end}/${size}`);
-  headers.set("Content-Length",String(sliced.byteLength));
+  headers.set(
+    "Content-Range",
+    `bytes ${start}-${end}/${size}`
+  );
+  headers.set(
+    "Content-Length",
+    String(sliced.byteLength)
+  );
 
   return new Response(sliced,{
     status:206,
@@ -150,13 +249,18 @@ async function createRangeResponse(request,cachedResponse) {
 }
 
 /*
- * 页面在首次播放完整音乐时发送消息，
- * Service Worker 在后台保存完整文件。
+ * 完整歌曲由页面在长按 pointerdown 时发送缓存请求。
  */
 self.addEventListener("message", (event) => {
   const data=event.data;
 
-  if(!data || data.type!=="CACHE_MEDIA" || !data.url) return;
+  if(
+    !data
+    || data.type!=="CACHE_MEDIA"
+    || !data.url
+  ){
+    return;
+  }
 
   event.waitUntil(
     (async()=>{
@@ -164,14 +268,23 @@ self.addEventListener("message", (event) => {
 
       if(url.origin!==self.location.origin) return;
 
-      const request=new Request(url.href,{method:"GET"});
-      const cached=await caches.match(request);
+      const request=new Request(
+        url.href,
+        {method:"GET"}
+      );
+
+      const cache=await caches.open(MUSIC_CACHE);
+      const cached=await cache.match(request);
 
       if(cached) return;
 
       try{
         const response=await fetch(request);
-        await putInCache(request,response);
+        await putInCache(
+          request,
+          response,
+          MUSIC_CACHE
+        );
       }catch{}
     })()
   );
@@ -185,46 +298,65 @@ self.addEventListener("fetch", (event) => {
   if(request.method!=="GET") return;
 
   /*
-   * 页面文档网络优先，确保代码更新不会长期卡在旧版本。
+   * 页面网络优先，确保 index.html 更新及时。
    */
   if(request.mode==="navigate"){
-    event.respondWith(networkFirst(request));
-    return;
-  }
-
-  /*
-   * 音乐可能发出 Range 请求。
-   * 若完整文件已缓存，直接从本地生成分段响应。
-   */
-  if(request.headers.has("range")){
     event.respondWith(
-      (async()=>{
-        const fullRequest=new Request(request.url,{method:"GET"});
-        const cached=await caches.match(fullRequest);
-
-        if(cached){
-          return createRangeResponse(request,cached);
-        }
-
-        return fetch(request);
-      })()
+      networkFirst(request,event)
     );
     return;
   }
 
   /*
-   * 图片、图标、音频、脚本等静态资源缓存优先。
+   * 已完整缓存的歌曲支持 Range 响应。
    */
+  if(request.headers.has("range")){
+    event.respondWith(
+      (async()=>{
+        const fullRequest=new Request(
+          request.url,
+          {method:"GET"}
+        );
+
+        const musicCache=await caches.open(MUSIC_CACHE);
+        const audioCache=await caches.open(AUDIO_CACHE);
+
+        const cached=
+          await musicCache.match(fullRequest)
+          || await audioCache.match(fullRequest);
+
+        if(cached){
+          return createRangeResponse(
+            request,
+            cached
+          );
+        }
+
+        return fetch(request);
+      })()
+    );
+
+    return;
+  }
+
+  const cacheName=cacheForUrl(url);
+
   event.respondWith(
-    cacheFirst(request).catch(async()=>{
-      const cached=await caches.match(request);
+    cacheFirst(
+      request,
+      cacheName,
+      event
+    ).catch(async()=>{
+      const cache=await caches.open(cacheName);
+      const cached=await cache.match(request);
 
       if(cached) return cached;
 
       return new Response("Offline",{
         status:503,
         headers:{
-          "Content-Type":"text/plain; charset=utf-8"
+          "Content-Type":
+            "text/plain; charset=utf-8"
         }
       });
     })
