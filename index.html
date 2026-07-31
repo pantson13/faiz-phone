@@ -487,99 +487,7 @@
     sigleModeFire:  'assets/sigle_mode_fire'
   };
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
-
-  /*
-   * v48 无持久音频缓存模式。
-   * 每次重新打开页面都会生成新的音频查询参数。
-   */
-  const AUDIO_ASSET_VERSION=String(Date.now());
-
-  function withAudioVersion(url){
-    const separator=url.includes('?') ? '&' : '?';
-
-    return `${url}${separator}av=${encodeURIComponent(
-      AUDIO_ASSET_VERSION
-    )}`;
-  }
-
-  async function clearAllFaizCaches(){
-    if('caches' in window){
-      try{
-        const names=await caches.keys();
-
-        await Promise.all(
-          names
-            .filter((name)=>
-              name.startsWith('faiz-pwa-')
-              || name.startsWith('faiz-app-')
-              || name.startsWith('faiz-audio-')
-              || name.startsWith('faiz-music-')
-            )
-            .map((name)=>caches.delete(name))
-        );
-      }catch(error){
-        console.warn('FAIZ 缓存清理失败：',error);
-      }
-    }
-
-    [
-      'faiz_audio_url_map_v1',
-      'faiz_audio_url_map_v2',
-      'faiz_audio_url_map_v3',
-      'faiz_audio_url_map_v4',
-      'faiz_audio_migration_v47'
-    ].forEach((key)=>{
-      try{ localStorage.removeItem(key); }catch{}
-    });
-  }
-
-  const audioCacheCleanupPromise=clearAllFaizCaches();
-
-  /* 仅当前页面内使用，关闭页面后即消失。 */
-  const urlMap={};
-
-  function persistAudioUrlMap(){
-    /* v48 故意不写入 localStorage。 */
-  }
-
-  const loadPromises=new Map();
-  const warmDownloadPromises=new Map();
-  const audioLoadStatus=new Map();
-
-  function persistAudioUrlMap(){
-    try{
-      localStorage.setItem(
-        AUDIO_URL_MAP_STORAGE_KEY,
-        JSON.stringify(urlMap)
-      );
-    }catch{}
-  }
-
-  function setAudioStatus(key,status,url=null){
-    audioLoadStatus.set(key,{
-      status,
-      url:url || urlMap[BASE[key]] || null,
-      updatedAt:Date.now()
-    });
-  }
-
-  window.faizAudioStatus=()=>{
-    const report={};
-
-    Object.keys(BASE).forEach((key)=>{
-      const state=audioLoadStatus.get(key);
-
-      report[key]={
-        state:buffers.has(key)
-          ? 'decoded'
-          : state?.status || 'not-requested',
-        url:state?.url || urlMap[BASE[key]] || null
-      };
-    });
-
-    console.table(report);
-    return report;
-  };
+  const urlMap = {};
 
   let ac=null, master=null;
   const buffers=new Map();
@@ -592,165 +500,66 @@
    * 现在会直接逐个尝试 GET：
    * .m4a → .mp3 → .wav → .mp4
    */
-  async function fetchKnownOrProbeAudio(key){
-    const base=BASE[key];
+  async function load(key){
+    if(buffers.has(key)) return buffers.get(key);
 
+    const base=BASE[key];
     if(!base) return null;
 
+    /*
+     * 已经解析过真实地址时优先直接读取。
+     */
     const knownUrl=urlMap[base];
 
     if(knownUrl){
       try{
-        const response=await fetch(
-          knownUrl,
-          {cache:'no-store'}
-        );
+        const res=await fetch(knownUrl);
 
-        if(response.ok){
-          return {url:knownUrl,response};
+        if(res.ok){
+          const arr=await res.arrayBuffer();
+          const b=await ctx().decodeAudioData(arr.slice(0));
+          buffers.set(key,b);
+          return b;
         }
       }catch(error){
-        console.warn(
-          `${key} 已记录地址读取失败，重新探测：`,
-          error
-        );
+        console.warn(`${key} 已记录地址读取失败，重新探测：`,error);
       }
 
       delete urlMap[base];
-      persistAudioUrlMap();
     }
 
+    /*
+     * 直接 GET 每一种扩展名。
+     * 只有真实取得并成功解码的文件才算加载成功。
+     */
     for(const ext of EXT){
-      const url=withAudioVersion(`${base}${ext}`);
+      const url=`${base}${ext}`;
 
       try{
-        const response=await fetch(
-          url,
-          {cache:'no-store'}
-        );
+        const res=await fetch(url);
 
-        if(!response.ok) continue;
+        if(!res.ok) continue;
+
+        const arr=await res.arrayBuffer();
+
+        if(!arr || arr.byteLength===0) continue;
+
+        const b=await ctx().decodeAudioData(arr.slice(0));
 
         urlMap[base]=url;
-        persistAudioUrlMap();
+        buffers.set(key,b);
 
-        return {url,response};
-      }catch{}
+        return b;
+      }catch(error){
+        /*
+         * 当前扩展名失败时继续尝试下一种，
+         * 不让一个 404 或解码失败终止整个加载过程。
+         */
+      }
     }
 
     return null;
   }
-
-  /*
-   * 只下载并放入 Service Worker 的短音效缓存，不解码。
-   * 后续真正使用时，解码会从本地音频缓存读取。
-   */
-  async function warmDownloadAudio(key){
-    if(buffers.has(key)){
-      setAudioStatus(key,'decoded');
-      return true;
-    }
-
-    if(warmDownloadPromises.has(key)){
-      return warmDownloadPromises.get(key);
-    }
-
-    const task=(async()=>{
-      setAudioStatus(key,'downloading');
-
-      const found=await fetchKnownOrProbeAudio(key);
-
-      if(!found){
-        setAudioStatus(key,'missing');
-        return false;
-      }
-
-      /*
-       * 消费响应以确保浏览器完成本次读取。
-       * Service Worker 会把相同响应保存进独立音频缓存。
-       */
-      try{
-        await found.response.arrayBuffer();
-      }catch{
-        setAudioStatus(key,'download-error',found.url);
-        return false;
-      }
-
-      setAudioStatus(key,'downloaded',found.url);
-      return true;
-    })();
-
-    warmDownloadPromises.set(key,task);
-
-    try{
-      return await task;
-    }finally{
-      warmDownloadPromises.delete(key);
-    }
-  }
-
-  /*
-   * 真正播放前才解码。
-   * loadPromises 防止快速连续点击造成同一文件重复 fetch / decode。
-   */
-  async function load(key){
-    if(buffers.has(key)){
-      setAudioStatus(key,'decoded');
-      return buffers.get(key);
-    }
-
-    if(loadPromises.has(key)){
-      return loadPromises.get(key);
-    }
-
-    const task=(async()=>{
-      setAudioStatus(key,'decoding');
-
-      /*
-       * 若该音效正在进行“只下载”任务，先等下载完成。
-       * 随后的 fetch 将直接命中 Service Worker 音频缓存。
-       */
-      if(warmDownloadPromises.has(key)){
-        await warmDownloadPromises.get(key);
-      }
-
-      const found=await fetchKnownOrProbeAudio(key);
-
-      if(!found){
-        setAudioStatus(key,'missing');
-        return null;
-      }
-
-      try{
-        const arr=await found.response.arrayBuffer();
-
-        if(!arr || arr.byteLength===0){
-          setAudioStatus(key,'empty',found.url);
-          return null;
-        }
-
-        const buffer=await ctx().decodeAudioData(arr.slice(0));
-
-        buffers.set(key,buffer);
-        setAudioStatus(key,'decoded',found.url);
-
-        return buffer;
-      }catch(error){
-        console.warn(`${key} 解码失败：`,error);
-        setAudioStatus(key,'decode-error',found.url);
-        return null;
-      }
-    })();
-
-    loadPromises.set(key,task);
-
-    try{
-      return await task;
-    }finally{
-      loadPromises.delete(key);
-    }
-  }
-
   function play(key,{loop=false}={}){ const b=buffers.get(key); if(!b) return null; const s=ctx().createBufferSource(); s.buffer=b; s.loop=!!loop; s.connect(master); s.start(); return s; }
   function stop(n){ if(n&&n.stop){ try{n.stop();}catch{} } }
 
@@ -831,7 +640,7 @@
    */
   const musicButtons={
     '0':{
-      url:withAudioVersion('assets/The people with no name.m4a'),
+      url:'assets/The people with no name.m4a',
       label:'The people with no name',
       timer:null,
       pointerId:null,
@@ -843,7 +652,7 @@
       fading:false
     },
     '7':{
-      url:withAudioVersion('assets/EGO~eyes glazing over.m4a'),
+      url:'assets/EGO~eyes glazing over.m4a',
       label:'EGO~eyes glazing over',
       timer:null,
       pointerId:null,
@@ -1825,28 +1634,11 @@
     });
   }
 
-  async function warmAudioKeys(
-    keys,
-    {batchSize=3,useIdle=false}={}
-  ){
-    for(let i=0;i<keys.length;i+=batchSize){
-      const batch=keys.slice(i,i+batchSize);
-
-      await Promise.all(
-        batch.map((key)=>
-          warmDownloadAudio(key).catch((error)=>{
-            console.warn(`${key} 下载缓存失败：`,error);
-            return false;
-          })
-        )
-      );
-
-      if(useIdle && i+batchSize<keys.length){
-        await waitForIdle();
-      }
-    }
-  }
-
+  /*
+   * v41 加载方式：
+   * 每一项直接进入 load()，完成 GET、读取和解码。
+   * 不再区分“预下载”和“稍后解码”。
+   */
   async function preloadAudioKeys(
     keys,
     {batchSize=3,useIdle=false}={}
@@ -1856,7 +1648,7 @@
 
       await Promise.all(
         batch.map((key)=>load(key).catch((error)=>{
-          console.warn(`${key} 后台解码失败：`,error);
+          console.warn(`${key} 后台加载失败：`,error);
           return null;
         }))
       );
@@ -1867,30 +1659,13 @@
     }
   }
 
-  async function warmThenDecodeAudioKeys(
-    keys,
-    {batchSize=3}={}
-  ){
-    await warmAudioKeys(
-      keys,
-      {batchSize,useIdle:true}
-    );
-
-    await waitForIdle();
-
-    await preloadAudioKeys(
-      keys,
-      {batchSize,useIdle:true}
-    );
-  }
-
   function startAuxiliaryAudioPreload(){
     if(auxiliaryPreloadStarted) return;
     auxiliaryPreloadStarted=true;
 
-    void warmThenDecodeAudioKeys(
+    void preloadAudioKeys(
       AUXILIARY_AUDIO_KEYS,
-      {batchSize:2}
+      {batchSize:2,useIdle:true}
     );
   }
 
@@ -1898,9 +1673,9 @@
     if(top1RoutePreloadStarted) return;
     top1RoutePreloadStarted=true;
 
-    void warmThenDecodeAudioKeys(
+    void preloadAudioKeys(
       TOP1_ROUTE_AUDIO_KEYS,
-      {batchSize:2}
+      {batchSize:2,useIdle:true}
     );
   }
 
@@ -1908,21 +1683,15 @@
     if(popup1PreloadStarted) return;
     popup1PreloadStarted=true;
 
-    void warmThenDecodeAudioKeys(
+    void preloadAudioKeys(
       POPUP1_AUDIO_KEYS,
-      {batchSize:2}
+      {batchSize:2,useIdle:true}
     );
   }
 
   function releaseDecodedAudio(keys){
     keys.forEach((key)=>{
-      /*
-       * 当前仍在播放的序列不会经过这里被释放。
-       * Seed 模式结束后才调用本函数。
-       */
-      if(buffers.delete(key)){
-        setAudioStatus(key,'downloaded');
-      }
+      buffers.delete(key);
     });
   }
 
@@ -1937,6 +1706,7 @@
 
     return c;
   }
+
 
   async function onOpenPhone(){
     await resumeAudioContext();
@@ -1956,11 +1726,6 @@
     }
 
     if(audioLoading) return;
-
-    /*
-     * 首次运行 v47 时，先确保旧程序缓存和旧音频缓存已清除。
-     */
-    await audioCacheCleanupPromise;
 
     audioLoading=true;
 
@@ -3827,7 +3592,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v55_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v56_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3845,7 +3610,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=55",
+          "./sw.js?v=56",
           {updateViaCache:"none"}
         );
 
