@@ -561,7 +561,33 @@
 
     return null;
   }
-  function play(key,{loop=false}={}){ const b=buffers.get(key); if(!b) return null; const s=ctx().createBufferSource(); s.buffer=b; s.loop=!!loop; s.connect(master); s.start(); return s; }
+  function play(
+    key,
+    {
+      loop=false,
+      loopStart=null,
+      loopEnd=null
+    }={}
+  ){
+    const b=buffers.get(key);
+    if(!b) return null;
+
+    const s=ctx().createBufferSource();
+    s.buffer=b;
+    s.loop=!!loop;
+
+    if(Number.isFinite(loopStart)){
+      s.loopStart=Math.max(0,loopStart);
+    }
+
+    if(Number.isFinite(loopEnd) && loopEnd>0){
+      s.loopEnd=Math.min(loopEnd,b.duration);
+    }
+
+    s.connect(master);
+    s.start();
+    return s;
+  }
   function stop(n){ if(n&&n.stop){ try{n.stop();}catch{} } }
 
 
@@ -1565,7 +1591,23 @@
   function playNextSeeding4Loop(){
     if(!seedingLoopActive) return;
 
-    const node=play('seeding4');
+    const buffer=buffers.get('seeding4');
+
+    /*
+     * 只创建一次 AudioBufferSourceNode，
+     * 由 Web Audio 音频线程在同一个 AudioBuffer 内原生循环。
+     *
+     * 不再使用：
+     * onended → JavaScript 回调 → 新建节点 → 下一遍
+     */
+    const node=play(
+      'seeding4',
+      {
+        loop:true,
+        loopStart:0,
+        loopEnd:buffer?.duration
+      }
+    );
 
     if(!node){
       console.warn('seeding4 无法播放');
@@ -1577,12 +1619,12 @@
     seedingNode=node;
 
     node.onended=()=>{
+      /*
+       * 原生循环不会自然结束。
+       * 这里只处理 stopSeeding() 主动停止后的节点清理。
+       */
       if(seedingNode===node){
         seedingNode=null;
-      }
-
-      if(seedingLoopActive){
-        playNextSeeding4Loop();
       }
     };
   }
@@ -3592,7 +3634,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v58_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v59_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3610,7 +3652,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=58",
+          "./sw.js?v=59",
           {updateViaCache:"none"}
         );
 
