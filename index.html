@@ -311,7 +311,7 @@
       <!-- TOP1B：变身后播放 s-ready，并进入 ENTER 待触发状态 -->
       <button class="hit circle" id="btnTop1B" aria-label="TOP1-B"></button>
 
-      <!-- TOP2：短按 ready；长按 1 秒 ready-metal -->
+      <!-- TOP2：短按 ready-metal → ENTER → exceed charge2 -->
       <button class="hit circle" id="btnTop2" aria-label="TOP2"></button>
 
 
@@ -571,34 +571,26 @@
    * ENTER 待触发路线：
    *
    * null   ：没有待触发路线
-   * top1b  ：ENTER → exceed charge
-   * top2   ：ENTER → exceed charge；长按 → exceed charge2
-   * top3   ：ENTER → exceed charge box
+   * top1b  ：ENTER短按 → exceed charge；ENTER长按 → exceed charge2
+   * top2   ：ENTER短按 → exceed charge2
+   * top3   ：ENTER短按 → exceed charge box
    */
   let readyRoute=null;
 
   /*
    * ENTER 长按分支：
-   * 只用于 TOP1B / TOP2 的 ready 路线。
-   * 按住 ENTER 达到 0.5 秒：
+   * 只保留给 TOP1B。
+   *
+   * TOP2 已改为普通短按 ENTER：
    * enter → exceed charge2。
    *
-   * TOP3 不进入该长按分支。
+   * TOP3 仍为普通短按 ENTER：
+   * enter → exceed charge box。
    */
   const ENTER_LONG_PRESS_MS=500;
   let enterPressTimer=null;
   let enterPressPointerId=null;
   let enterLongPressTriggered=false;
-
-  /*
-   * TOP2 长按分支：
-   * 短按播放 ready；
-   * 长按满 0.5 秒只播放 ready-metal，不播放 ready。
-   */
-  const TOP2_LONG_PRESS_MS=500;
-  let top2PressTimer=null;
-  let top2PressPointerId=null;
-  let top2LongPressTriggered=false;
 
   /*
    * 106 / 103 模式共用 FIRE 按钮状态。
@@ -2232,17 +2224,16 @@
 
   function canTriggerEnterLongPress(){
     /*
-     * 只用于 TOP1B / TOP2。
+     * ENTER 长按只保留给 TOP1B。
      *
-     * TOP3 的 ENTER 路线固定为：
-     * enter → exceed charge box，
-     * 不进入 exceed charge2 长按分支。
+     * TOP2 与 TOP3 都使用普通短按 ENTER，
+     * 不再建立 0.5 秒长按计时器。
      */
     return (
       audioReady &&
       transformed &&
       readyArmed &&
-      readyRoute!=='top3' &&
+      readyRoute==='top1b' &&
       buf!=='106' &&
       buf!=='103'
     );
@@ -2404,8 +2395,11 @@
     /*
      * 变身后的 ENTER 路线：
      *
-     * TOP1B / TOP2：
+     * TOP1B：
      * enter → exceed charge
+     *
+     * TOP2：
+     * enter → exceed charge2
      *
      * TOP3：
      * enter → exceed charge box
@@ -2422,6 +2416,8 @@
 
         if(route==='top3'){
           startTop3EnterSequence();
+        }else if(route==='top2'){
+          playSequence(['enter','exceed2']);
         }else{
           playSequence(['enter','exceed']);
         }
@@ -3041,23 +3037,15 @@
   }
 
   /*
-   * TOP2 短按：
-   * 播放 ready，并进入 ENTER 待触发状态。
-   */
-  function onTop2Ready(){
-    if(!audioReady) return;
-    if(!transformed) return;
-
-    interruptRing();
-    play('ready');
-    readyArmed=true;
-    readyRoute='top2';
-  }
-
-  /*
-   * TOP2 长按：
-   * 播放 ready-metal，并进入同一个 ENTER 待触发状态。
-   * 不会播放 ready。
+   * TOP2：
+   *
+   * 普通短按：
+   * 1. 播放 ready-metal；
+   * 2. 进入 TOP2 专用 ENTER 待触发状态；
+   * 3. 下一次普通短按 ENTER：
+   *    enter → exceed charge2。
+   *
+   * TOP2 不再有长按分支。
    */
   async function onTop2ReadyMetal(){
     if(!audioReady) return;
@@ -3081,80 +3069,12 @@
 
     readyArmed=true;
     readyRoute='top2';
-  }
-
-  function clearTop2PressTimer(){
-    if(top2PressTimer){
-      clearTimeout(top2PressTimer);
-      top2PressTimer=null;
-    }
-  }
-
-  function onTop2PointerDown(event){
-    if(event.pointerType==='mouse' && event.button!==0) return;
-    if(top2PressPointerId!==null) return;
-
-    top2PressPointerId=event.pointerId;
-    top2LongPressTriggered=false;
-
-    try{
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }catch{}
 
     /*
-     * 未变身时不建立长按触发。
-     * 松手后短按函数也会自行拒绝执行。
+     * TOP2 下一步固定使用 exceed charge2，
+     * 在 ready-metal 播放期间提前完成加载。
      */
-    if(!audioReady || !transformed) return;
-
-    /*
-     * 长按倒计时期间提前解码 ready-metal。
-     */
-    void ensureSoundLoaded('readyMetal');
-
-    clearTop2PressTimer();
-
-    top2PressTimer=setTimeout(()=>{
-      top2PressTimer=null;
-
-      if(top2PressPointerId!==event.pointerId) return;
-      if(!audioReady || !transformed) return;
-
-      top2LongPressTriggered=true;
-      onTop2ReadyMetal();
-    },TOP2_LONG_PRESS_MS);
-  }
-
-  function finishTop2Pointer(event,{cancelled=false}={}){
-    if(top2PressPointerId!==event.pointerId) return;
-
-    clearTop2PressTimer();
-
-    const wasLongPress=top2LongPressTriggered;
-
-    top2PressPointerId=null;
-    top2LongPressTriggered=false;
-
-    try{
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }catch{}
-
-    /*
-     * 未达到 0.5 秒时执行原短按 ready。
-     * 已触发长按时，松手不再补一次 ready。
-     */
-    if(!cancelled && !wasLongPress){
-      onTop2Ready();
-    }
-  }
-
-  function onTop2PointerUp(event){
-    event.preventDefault();
-    finishTop2Pointer(event);
-  }
-
-  function onTop2PointerCancel(event){
-    finishTop2Pointer(event,{cancelled:true});
+    void ensureSoundLoaded('exceed2');
   }
 
   /*
@@ -3181,33 +3101,10 @@
   document.getElementById('btnTop1').addEventListener('click', onTop1);
   document.getElementById('btnTop1B').addEventListener('click', onTop1BReady);
 
-  const top2Button=document.getElementById('btnTop2');
-
-  top2Button.addEventListener('pointerdown',onTop2PointerDown);
-  top2Button.addEventListener('pointerup',onTop2PointerUp);
-  top2Button.addEventListener('pointercancel',onTop2PointerCancel);
-
-  top2Button.addEventListener('lostpointercapture',()=>{
-    clearTop2PressTimer();
-    top2PressPointerId=null;
-    top2LongPressTriggered=false;
-  });
-
-  top2Button.addEventListener('contextmenu',(event)=>{
-    event.preventDefault();
-  });
-
-  /*
-   * 鼠标和触摸由 pointer 事件处理。
-   * detail===0 保留键盘或脚本 click 的可用性。
-   */
-  top2Button.addEventListener('click',(event)=>{
-    if(event.detail===0){
-      onTop2Ready();
-    }else{
-      event.preventDefault();
-    }
-  });
+  document.getElementById('btnTop2')
+    .addEventListener('click',()=>{
+      void onTop2ReadyMetal();
+    });
 
   document.getElementById('btnTop3').addEventListener('click', onTop3Ready);
   document.getElementById('btnTop4').addEventListener('click', togglePopup4);
@@ -3691,7 +3588,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v62_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v63_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3709,7 +3606,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=62",
+          "./sw.js?v=63",
           {updateViaCache:"none"}
         );
 
