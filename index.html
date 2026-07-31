@@ -454,9 +454,29 @@
   const EXT = ['.m4a','.mp3','.wav','.mp4'];
   const urlMap = {};
 
-  let ac=null, master=null;
+  let ac=null, master=null, seeding4Bus=null;
   const buffers=new Map();
-  function ctx(){ if(ac) return ac; const C=window.AudioContext||window.webkitAudioContext; ac=new C({latencyHint:'interactive'}); master=ac.createGain(); master.gain.value=1; master.connect(ac.destination); return ac; }
+
+  function ctx(){
+    if(ac) return ac;
+
+    const C=window.AudioContext||window.webkitAudioContext;
+    ac=new C({latencyHint:'interactive'});
+
+    master=ac.createGain();
+    master.gain.value=1;
+
+    /*
+     * seeding4 使用独立音量总线。
+     * BTN7 仍然使用独立 HTMLAudioElement，不接入这里。
+     */
+    seeding4Bus=ac.createGain();
+    seeding4Bus.gain.value=1;
+    seeding4Bus.connect(master);
+
+    master.connect(ac.destination);
+    return ac;
+  }
   /*
    * 音效加载器：
    * 不再使用 HEAD 探测文件，因为 GitHub Pages / PWA 缓存环境
@@ -695,6 +715,19 @@
   const SEEDING4_CROSSFADE_SECONDS=0.018;
   const SEEDING4_SCHEDULE_AHEAD_SECONDS=1.2;
 
+  /*
+   * BTN3 / BTN4 / BTN5 / BTN6 触发时，
+   * 临时将 seeding4 压到原音量的 52%。
+   *
+   * 下降较快，恢复稍慢，避免音量突然跳变。
+   */
+  const SEEDING4_DUCK_GAIN=0.52;
+  const SEEDING4_DUCK_ATTACK_SECONDS=0.035;
+  const SEEDING4_DUCK_RELEASE_SECONDS=0.22;
+  const BTN5_SEEDING4_DUCK_MS=500;
+
+  const seeding4DuckTokens=new Set();
+
   let seeding4ScheduleTimer=null;
   let seeding4ScheduledNodes=[];
   let seeding4NextStartTime=0;
@@ -926,6 +959,131 @@
     }
   }
 
+  function holdAudioParamAtTime(param,when){
+    if(typeof param.cancelAndHoldAtTime==='function'){
+      param.cancelAndHoldAtTime(when);
+      return;
+    }
+
+    const currentValue=param.value;
+    param.cancelScheduledValues(when);
+    param.setValueAtTime(currentValue,when);
+  }
+
+  function applySeeding4DuckState({immediate=false}={}){
+    if(!seeding4Bus) return;
+
+    const audioContext=ctx();
+    const now=audioContext.currentTime;
+    const shouldDuck=seeding4DuckTokens.size>0;
+    const target=shouldDuck
+      ? SEEDING4_DUCK_GAIN
+      : 1;
+
+    holdAudioParamAtTime(
+      seeding4Bus.gain,
+      now
+    );
+
+    if(immediate){
+      seeding4Bus.gain.setValueAtTime(target,now);
+      return;
+    }
+
+    const duration=shouldDuck
+      ? SEEDING4_DUCK_ATTACK_SECONDS
+      : SEEDING4_DUCK_RELEASE_SECONDS;
+
+    seeding4Bus.gain.linearRampToValueAtTime(
+      target,
+      now+duration
+    );
+  }
+
+  function isSeeding4LoopRunning(){
+    return (
+      seedingLoopActive
+      && !!seeding4LoopConfig
+      && seeding4ScheduledNodes.length>0
+    );
+  }
+
+  function beginSeeding4Duck(){
+    /*
+     * 只在 seeding4 真正进入循环后压低。
+     * seeding2 与 seeding3 不受影响。
+     */
+    if(!isSeeding4LoopRunning()) return null;
+
+    const token=Symbol('seeding4-duck');
+    seeding4DuckTokens.add(token);
+    applySeeding4DuckState();
+
+    let released=false;
+
+    return ()=>{
+      if(released) return;
+      released=true;
+
+      if(!seeding4DuckTokens.delete(token)) return;
+      applySeeding4DuckState();
+    };
+  }
+
+  function resetSeeding4Ducking({immediate=true}={}){
+    seeding4DuckTokens.clear();
+    applySeeding4DuckState({immediate});
+  }
+
+  function duckSeeding4ForNode(node,key){
+    const release=beginSeeding4Duck();
+
+    if(!release) return;
+
+    let released=false;
+    let fallbackTimer=null;
+
+    const finish=()=>{
+      if(released) return;
+      released=true;
+
+      if(fallbackTimer){
+        clearTimeout(fallbackTimer);
+        fallbackTimer=null;
+      }
+
+      release();
+    };
+
+    node.addEventListener(
+      'ended',
+      finish,
+      {once:true}
+    );
+
+    const buffer=buffers.get(key);
+
+    if(buffer){
+      fallbackTimer=setTimeout(
+        finish,
+        Math.ceil(
+          (buffer.duration+0.35)*1000
+        )
+      );
+    }
+  }
+
+  function duckSeeding4ForDuration(durationMs){
+    const release=beginSeeding4Duck();
+
+    if(!release) return;
+
+    setTimeout(
+      release,
+      Math.max(0,durationMs)
+    );
+  }
+
   function stopSeeding4CrossfadeLoop(){
     if(seeding4ScheduleTimer){
       clearTimeout(seeding4ScheduleTimer);
@@ -940,6 +1098,8 @@
     seeding4ScheduledNodes=[];
     seeding4NextStartTime=0;
     seeding4LoopConfig=null;
+
+    resetSeeding4Ducking({immediate:true});
   }
 
   function stopSeeding(){
@@ -968,6 +1128,9 @@
     /*
      * BTN3 / BTN4 / BTN6 / BTN7：
      * BTN9 已经开始播放 seed-end 后仍然允许使用。
+     *
+     * BTN3 / BTN4 / BTN5 / BTN6 在 seeding4 循环期间
+     * 会临时压低 seeding4；BTN7 不参与该音量处理。
      */
     const allowedAfterSeedEnd=
       buttonNumber===3
@@ -986,7 +1149,10 @@
   async function triggerPopup1SimpleSound(
     key,
     fileLabel,
-    {allowAfterSeedEnd=false}={}
+    {
+      allowAfterSeedEnd=false,
+      duckSeeding4=false
+    }={}
   ){
     const sessionToken=popup1SoundSessionToken;
     const loaded=await ensureSoundLoaded(key);
@@ -1017,6 +1183,10 @@
       return false;
     }
 
+    if(duckSeeding4){
+      duckSeeding4ForNode(node,key);
+    }
+
     return true;
   }
 
@@ -1039,10 +1209,18 @@
       || buttonNumber===6
       || buttonNumber===7;
 
+    const shouldDuckSeeding4=
+      buttonNumber===3
+      || buttonNumber===4
+      || buttonNumber===6;
+
     await triggerPopup1SimpleSound(
       key,
       fileLabel,
-      {allowAfterSeedEnd}
+      {
+        allowAfterSeedEnd,
+        duckSeeding4:shouldDuckSeeding4
+      }
     );
   }
 
@@ -1429,7 +1607,7 @@
 
     source.buffer=buffer;
     source.connect(gain);
-    gain.connect(master);
+    gain.connect(seeding4Bus);
 
     if(firstPass){
       gain.gain.setValueAtTime(1,when);
@@ -3217,9 +3395,22 @@
 
   /*
    * BTN5：
-   * 删除原来的短按 / 长按分支锁定逻辑。
-   * 当前保持无音效、无交互。
+   * 当前仍不播放音效。
+   *
+   * seeding4 正在循环时，普通点击会让它暂时降低音量
+   * 0.5 秒，然后平滑恢复。
    */
+  document.getElementById('popup1Btn5')
+    .addEventListener('click',(event)=>{
+      event.preventDefault();
+      event.stopPropagation();
+
+      if(!canTriggerPopup1ButtonSound(5)) return;
+
+      duckSeeding4ForDuration(
+        BTN5_SEEDING4_DUCK_MS
+      );
+    });
 
   /*
    * BTN6：seed run
@@ -3588,7 +3779,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v63_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v64_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3606,7 +3797,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=63",
+          "./sw.js?v=64",
           {updateViaCache:"none"}
         );
 
