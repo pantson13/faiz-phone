@@ -368,7 +368,7 @@
                 type="button"
                 aria-label="POPUP1-BTN3"></button>
 
-        <!-- TOP1 弹框新增 POPUP1-BTN4～POPUP1-BTN8：总共 8 个 -->
+        <!-- TOP1 弹框 POPUP1-BTN1～POPUP1-BTN9：总共 9 个 -->
         <button class="hit circle popup-inner-circle"
                 id="popup1Btn4"
                 type="button"
@@ -403,6 +403,11 @@
                 id="popup1Btn8"
                 type="button"
                 aria-label="POPUP1-BTN8"></button>
+
+        <button class="hit circle popup-inner-circle"
+                id="popup1Btn9"
+                type="button"
+                aria-label="POPUP1-BTN9"></button>
 
 
       </div>
@@ -999,7 +1004,7 @@
   ];
 
   /*
-   * POPUP1 打开后才准备 BTN3～BTN8 专用音效。
+   * POPUP1 打开后才准备 BTN3～BTN8 专用音效；BTN9 使用 TOP1 路线中的 seed-end。
    */
   const POPUP1_AUDIO_KEYS=[
     'seedHit',
@@ -1145,7 +1150,7 @@
   }
 
   function syncPopup1SoundButtonLocks(){
-    for(let buttonNumber=3;buttonNumber<=8;buttonNumber+=1){
+    for(let buttonNumber=3;buttonNumber<=9;buttonNumber+=1){
       const button=document.getElementById(`popup1Btn${buttonNumber}`);
 
       if(!button) continue;
@@ -1411,6 +1416,97 @@
     await triggerPopup1SimpleSound(key,fileLabel);
   }
 
+  /*
+   * BTN9：结束当前 Seed 模式。
+   *
+   * 执行顺序：
+   * 1. 停止 seeding / seeding2 / seeding3 / seeding4
+   * 2. 保留已经启动的 BTN7 kick 连携
+   * 3. 播放 seed-end
+   * 4. 立即结束 Seed 模式并关闭 POPUP1
+   * 5. 立即重置 BTN4 / BTN7 次数与分支锁定
+   *
+   * 注意：
+   * - 不增加 popup1SoundSessionToken，否则 BTN7 连携会被中断。
+   * - 不调用 stopKickSequence()。
+   */
+  async function triggerPopup1Btn9SeedEnd(event){
+    if(event){
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if(!canTriggerPopup1ButtonSound(9)) return;
+
+    const sessionToken=popup1SoundSessionToken;
+    const loaded=await ensureSoundLoaded('seedEnd');
+
+    if(!loaded){
+      console.warn('未找到 assets/seed-end.m4a');
+      return;
+    }
+
+    /*
+     * 加载期间若已经切换到其他 Seed 会话，
+     * 本次旧点击不得补播。
+     */
+    if(sessionToken!==popup1SoundSessionToken) return;
+    if(!faizSeedUnlocked || !faizSeedActive) return;
+    if(seedEndPlaying) return;
+
+    stopSeeding();
+    interruptRing();
+    stopSeedEndPlayback();
+
+    const seedEndBuffer=buffers.get('seedEnd');
+    const node=play('seedEnd');
+
+    if(!node){
+      console.warn('seed-end 无法播放');
+      return;
+    }
+
+    seedEndPlaying=true;
+    seedEndNode=node;
+
+    node.onended=finishSeedEnd;
+
+    if(seedEndBuffer){
+      seedEndTimer=setTimeout(
+        finishSeedEnd,
+        Math.ceil(
+          (seedEndBuffer.duration+0.08)*1000
+        )
+      );
+    }
+
+    /*
+     * 立即结束 Seed 模式，但保持 POPUP1 打开。
+     *
+     * 不改变 popup1SoundSessionToken，
+     * 让已启动的 BTN7 连携继续使用原会话播放完。
+     *
+     * POPUP1 随后只由 TOP1 关闭。
+     */
+    faizSeedActive=false;
+    faizSeedLoading=false;
+
+    /*
+     * 立即归零显示次数并清除 BTN3 / BTN4 / BTN5 的分支锁定。
+     *
+     * kickSequencePlaying 若仍为 true，
+     * BTN4 / BTN7 的忙碌锁会自然保留到连携播放完成，
+     * 但不会停止连携。
+     */
+    resetKickLineCount();
+    resetPopup1SoundButtonLocks();
+
+    /*
+     * 不释放 kick / kick-end AudioBuffer。
+     * 否则正在继续的 BTN7 连携可能在下一段播放时找不到音频。
+     */
+  }
+
   function activatePopup1ButtonSoundLine(buttonNumber,pressType){
     if(!canTriggerPopup1ButtonSound(buttonNumber)) return false;
 
@@ -1583,23 +1679,13 @@
     seedEndNode=null;
     seedEndPlaying=false;
 
-    faizSeedActive=false;
-    faizSeedLoading=false;
-
     /*
-     * 必须等 seed-end 真正结束后：
-     * - BTN4 / BTN7 次数归零
-     * - 解除音效锁定
+     * BTN9 在 seed-end 开始播放时已经立即结束 Seed 模式、
+     * 重置次数并清除分支锁定。
+     *
+     * 这里仅收尾 seed-end 自身，绝不停止正在播放的
+     * BTN7 kick → kick-end 连携。
      */
-    stopKickSequence({resetCount:true});
-    resetPopup1SoundButtonLocks();
-
-    /*
-     * 释放低频弹框音效的解码内存。
-     * Service Worker 下载缓存仍然保留。
-     */
-    releaseDecodedAudio(RELEASABLE_POPUP1_AUDIO_KEYS);
-    popup1PreloadStarted=false;
   }
 
 
@@ -1665,7 +1751,7 @@
    * seeding4 循环：
    * 每次播放结束后立即播放下一遍。
    * POPUP1-BTN3～BTN8 不会影响它；
-   * 只有再次按 TOP1 才会调用 stopSeeding()。
+   * BTN9 会调用 stopSeeding() 并结束 Seed 模式。
    */
   function playNextSeeding4Loop(){
     if(!seedingLoopActive) return;
@@ -2818,13 +2904,29 @@
    * - 播放 faiz-seed
    * - 打开 popup1
    *
-   * Seed 模式中再次按 TOP1：
-   * - 立即停止 seeding / seeding2 / seeding3 / seeding4
-   * - 关闭 popup1
-   * - 播放 seed-end
-   * - seed-end 播放完成后解除 BTN3～BTN8 音效锁定
+   * POPUP1 已打开时再次按 TOP1：
+   * - 只关闭弹窗
+   * - 不触发任何逻辑或音效
+   * - 不停止循环
+   * - 不改变 Seed 状态
+   * - 不重置次数或锁定
+   *
+   * seed-end 只由 BTN9 触发；
+   * BTN9 同时负责结束本轮 Seed 模式。
    */
   async function onTop1(){
+    /*
+     * 只要 POPUP1 当前打开，再按 TOP1 就只关闭弹窗。
+     *
+     * 这个判断必须位于整个函数最前面：
+     * BTN9 会结束 Seed 模式，但仍保持 POPUP1 打开。
+     * 此时按 TOP1 不能误走“第一次点击”并重播 faiz-seed。
+     */
+    if(popup1.classList.contains('show')){
+      popup1.classList.remove('show');
+      return;
+    }
+
     if(!audioReady) return;
     if(!faizSeedUnlocked) return;
     if(seedEndPlaying) return;
@@ -2891,7 +2993,7 @@
         faizSeedActive=true;
 
         /*
-         * 用户已经进入 POPUP1，再准备 BTN3～BTN8 专用音效。
+         * 用户已经进入 POPUP1，再准备 BTN3～BTN8 专用音效；BTN9 使用已加载的 seed-end。
          */
         startPopup1AudioPreload();
       }finally{
@@ -2902,45 +3004,12 @@
     }
 
     /*
-     * 第二次按 TOP1：
-     * seed-end 已在第一次 TOP1 时预加载完成，
-     * 所以此处不再 await 网络请求，直接同步播放。
+     * Seed 模式仍然开启但 POPUP1 已关闭时，
+     * 再按 TOP1 不执行任何逻辑或音效。
+     *
+     * 不重新打开弹窗，也不重复播放 faiz-seed。
      */
-    stopSeeding();
-    popup1SoundSessionToken+=1;
-    stopKickSequence({resetCount:false});
-    popup1.classList.remove('show');
-
-    const seedEndBuffer=buffers.get('seedEnd');
-
-    if(!seedEndBuffer){
-      console.warn(
-        'seed-end 缓冲不存在，已结束本轮 Seed 模式'
-      );
-
-      seedEndPlaying=true;
-      finishSeedEnd();
-      return;
-    }
-
-    seedEndPlaying=true;
-    faizSeedLoading=true;
-
-    const endNode=play('seedEnd');
-
-    if(!endNode){
-      console.warn('seed-end 无法播放');
-      finishSeedEnd();
-      return;
-    }
-
-    seedEndNode=endNode;
-    seedEndNode.onended=finishSeedEnd;
-
-    seedEndTimer=setTimeout(
-      finishSeedEnd,
-      Math.ceil((seedEndBuffer.duration+0.08)*1000)
-    );
+    return;
   }
 
   /*
@@ -3421,6 +3490,19 @@
       );
     });
 
+  /*
+   * BTN9：结束 Seed 模式并播放 seed-end。
+   *
+   * - 停止 BTN2 的 seeding 系列
+   * - 不停止已启动的 BTN7 kick 连携
+   * - 立即结束 Seed 模式，但保持 POPUP1 打开
+   * - 立即重置次数与分支锁定
+   */
+  document.getElementById('popup1Btn9')
+    .addEventListener('click',(event)=>{
+      void triggerPopup1Btn9SeedEnd(event);
+    });
+
   document.querySelectorAll('.hit[data-k]').forEach(b=>{
     const k=b.dataset.k;
 
@@ -3629,10 +3711,10 @@
      *
      * 第一排：BTN1、BTN2、BTN3
      * 第二排：BTN4、BTN5、BTN6
-     * 第三排：BTN7、BTN8（居中）
+     * 第三排：BTN7、BTN8、BTN9
      *
-     * 所有按钮都使用同一个 diameter，
-     * 因此 BTN4～BTN8 与 BTN1 的实际像素大小完全一致。
+     * 所有按钮使用同一个 diameter，
+     * BTN1～BTN9 的实际像素大小完全一致。
      */
     function placePopup1Grid(){
       const phone=document.getElementById('phone');
@@ -3643,9 +3725,14 @@
 
       if(!phoneWidth || !phoneHeight) return;
 
-      const popupLeft=phoneWidth*pct('--popup1-left')/100;
-      const popupTop=phoneHeight*pct('--popup1-top')/100;
-      const popupWidth=phoneWidth*pct('--popup1-w')/100;
+      const popupLeft=
+        phoneWidth*pct('--popup1-left')/100;
+
+      const popupTop=
+        phoneHeight*pct('--popup1-top')/100;
+
+      const popupWidth=
+        phoneWidth*pct('--popup1-w')/100;
 
       const diameter=
         popupWidth*pct('--popup1-grid-btn-size')/100;
@@ -3679,37 +3766,37 @@
       const col3=
         popupWidth*pct('--popup1-grid-col3-left')/100;
 
-      const columnStep=col2-col1;
       const row1Top=topPadding;
       const row2Top=row1Top+diameter+rowGap;
       const row3Top=row2Top+diameter+rowGap;
-
-      /*
-       * 第三排两个按钮整体居中。
-       */
-      const lastRowWidth=(diameter*2)+(columnStep-diameter);
-      const lastRowLeft=(popupWidth-lastRowWidth)/2;
 
       const positions=[
         [1,col1,row1Top],
         [2,col2,row1Top],
         [3,col3,row1Top],
+
         [4,col1,row2Top],
         [5,col2,row2Top],
         [6,col3,row2Top],
-        [7,lastRowLeft,row3Top],
-        [8,lastRowLeft+columnStep,row3Top]
+
+        [7,col1,row3Top],
+        [8,col2,row3Top],
+        [9,col3,row3Top]
       ];
 
-      positions.forEach(([buttonNumber,left,top])=>{
-        const button=
-          document.getElementById(`popup1Btn${buttonNumber}`);
+      positions.forEach(
+        ([buttonNumber,left,top])=>{
+          const button=
+            document.getElementById(
+              `popup1Btn${buttonNumber}`
+            );
 
-        button.style.left=`${left}px`;
-        button.style.top=`${top}px`;
-        button.style.width=`${diameter}px`;
-        button.style.height=`${diameter}px`;
-      });
+          button.style.left=`${left}px`;
+          button.style.top=`${top}px`;
+          button.style.width=`${diameter}px`;
+          button.style.height=`${diameter}px`;
+        }
+      );
     }
 
     function setPct(el, l,t,w,h){
@@ -3734,7 +3821,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v48_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v54_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3752,7 +3839,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=48",
+          "./sw.js?v=54",
           {updateViaCache:"none"}
         );
 
