@@ -985,49 +985,46 @@
   }
 
   function canTriggerPopup1ButtonSound(buttonNumber){
-    if(!audioReady) return false;
-    if(!faizSeedUnlocked || !faizSeedActive) return false;
-    if(seedEndPlaying) return false;
+    const popup1=document.getElementById('popup1');
 
+    if(!audioReady) return false;
+    if(!faizSeedUnlocked) return false;
+    if(!popup1.classList.contains('show')) return false;
+
+    /*
+     * BTN3 / BTN4 / BTN6 / BTN7：
+     *
+     * 即使 BTN9 已经结束 Seed 流程，
+     * 或 seed-end 仍在播放，
+     * 只要 POPUP1 还打开，就继续允许触发。
+     */
+    const allowedAfterSeedEnd=
+      buttonNumber===3
+      || buttonNumber===4
+      || buttonNumber===6
+      || buttonNumber===7;
+
+    if(!allowedAfterSeedEnd){
+      if(!faizSeedActive) return false;
+      if(seedEndPlaying) return false;
+    }
+
+    /*
+     * BTN4 / BTN7 自身的连携防重复规则保留：
+     * 已有 kick 连携播放时，不允许再次启动另一套，
+     * 也不允许 BTN4 继续累计新的次数。
+     */
     if(
       kickSequencePlaying
-      && (buttonNumber===4 || buttonNumber===7)
+      && (
+        buttonNumber===4
+        || buttonNumber===7
+      )
     ){
       return false;
     }
 
-    return !popup1LockedSoundButtons.has(buttonNumber);
-  }
-
-  /*
-   * BTN3 / BTN4 / BTN5 后续音效统一从这里进入。
-   * 返回 false 时，本次音效不得触发。
-   */
-  function syncKickCountDisplay(){
-    const btn4Count=document.getElementById('popup1Btn4Count');
-    const btn7Count=document.getElementById('popup1Btn7Count');
-    const visible=kickLineCount>0;
-    const text=String(kickLineCount);
-
-    [btn4Count,btn7Count].forEach((badge)=>{
-      if(!badge) return;
-
-      badge.textContent=text;
-      badge.hidden=!visible;
-    });
-  }
-
-  function setKickLineCount(nextCount){
-    kickLineCount=Math.max(0,Math.floor(nextCount));
-    syncKickCountDisplay();
-  }
-
-  function resetKickLineCount(){
-    setKickLineCount(0);
-  }
-
-  function incrementKickLineCount(){
-    setKickLineCount(kickLineCount+1);
+    return !isPopup1SoundButtonLocked(buttonNumber);
   }
 
   async function triggerPopup1SimpleSound(key,fileLabel){
@@ -1234,6 +1231,7 @@
    * 3. 播放 seed-end
    * 4. 立即结束 Seed 模式并关闭 POPUP1
    * 5. 立即重置 BTN4 / BTN7 次数与分支锁定
+   * 6. seed-end 播放期间，BTN3 / BTN4 / BTN6 / BTN7 仍可触发
    *
    * 注意：
    * - 不增加 popup1SoundSessionToken，否则 BTN7 连携会被中断。
@@ -3592,7 +3590,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v56_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v57_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3610,7 +3608,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=56",
+          "./sw.js?v=57",
           {updateViaCache:"none"}
         );
 
