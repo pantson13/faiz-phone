@@ -678,6 +678,25 @@
   let seedingLoopActive=false;
 
   /*
+   * seeding4 无缝循环专用状态。
+   *
+   * 不再使用单个 source.loop 硬切边界。
+   * 改为：
+   * - 自动检测解码后首尾低电平填充
+   * - 提前调度下一遍
+   * - 极短交叉淡化覆盖边界
+   */
+  const SEEDING4_PADDING_SCAN_SECONDS=0.12;
+  const SEEDING4_SILENCE_THRESHOLD=0.0008;
+  const SEEDING4_CROSSFADE_SECONDS=0.018;
+  const SEEDING4_SCHEDULE_AHEAD_SECONDS=1.2;
+
+  let seeding4ScheduleTimer=null;
+  let seeding4ScheduledNodes=[];
+  let seeding4NextStartTime=0;
+  let seeding4LoopConfig=null;
+
+  /*
    * BTN4 新交互：
    *
    * 短按：seed kick one
@@ -901,12 +920,30 @@
     }
   }
 
+  function stopSeeding4CrossfadeLoop(){
+    if(seeding4ScheduleTimer){
+      clearTimeout(seeding4ScheduleTimer);
+      seeding4ScheduleTimer=null;
+    }
+
+    seeding4ScheduledNodes.forEach(({source})=>{
+      source.onended=null;
+      stop(source);
+    });
+
+    seeding4ScheduledNodes=[];
+    seeding4NextStartTime=0;
+    seeding4LoopConfig=null;
+  }
+
   function stopSeeding(){
     /*
-     * 先关闭循环开关，再停止当前音频。
-     * 这样 onended 即使稍后触发，也不会重新播放。
+     * 先关闭循环开关，再停止当前音频及所有已预调度的
+     * seeding4 交叉淡化节点。
      */
     seedingLoopActive=false;
+
+    stopSeeding4CrossfadeLoop();
 
     if(!seedingNode) return;
 
@@ -1300,51 +1337,237 @@
     };
   }
 
+  function getBufferPeakAtFrame(buffer,frameIndex){
+    let peak=0;
+
+    for(let channel=0;channel<buffer.numberOfChannels;channel+=1){
+      const data=buffer.getChannelData(channel);
+      peak=Math.max(
+        peak,
+        Math.abs(data[frameIndex] || 0)
+      );
+    }
+
+    return peak;
+  }
+
+  function findSeeding4PlayableRegion(buffer){
+    const sampleRate=buffer.sampleRate;
+    const frameLength=buffer.length;
+
+    const maxScanFrames=Math.min(
+      Math.floor(
+        sampleRate*SEEDING4_PADDING_SCAN_SECONDS
+      ),
+      Math.floor(frameLength*0.2)
+    );
+
+    let startFrame=0;
+    let endFrame=frameLength;
+
+    while(
+      startFrame<maxScanFrames
+      && getBufferPeakAtFrame(buffer,startFrame)
+        <=SEEDING4_SILENCE_THRESHOLD
+    ){
+      startFrame+=1;
+    }
+
+    while(
+      endFrame>frameLength-maxScanFrames
+      && getBufferPeakAtFrame(buffer,endFrame-1)
+        <=SEEDING4_SILENCE_THRESHOLD
+    ){
+      endFrame-=1;
+    }
+
+    const playableFrames=endFrame-startFrame;
+    const minimumFrames=Math.floor(sampleRate*0.15);
+
+    if(playableFrames<minimumFrames){
+      startFrame=0;
+      endFrame=frameLength;
+    }
+
+    return {
+      startOffset:startFrame/sampleRate,
+      endOffset:endFrame/sampleRate,
+      duration:(endFrame-startFrame)/sampleRate
+    };
+  }
+
+  function removeFinishedSeeding4Node(source){
+    seeding4ScheduledNodes=
+      seeding4ScheduledNodes.filter(
+        (entry)=>entry.source!==source
+      );
+  }
+
+  function scheduleOneSeeding4Pass(
+    when,
+    {firstPass=false}={}
+  ){
+    if(!seedingLoopActive) return false;
+    if(!seeding4LoopConfig) return false;
+
+    const {
+      buffer,
+      startOffset,
+      duration,
+      crossfade
+    }=seeding4LoopConfig;
+
+    const audioContext=ctx();
+    const source=audioContext.createBufferSource();
+    const gain=audioContext.createGain();
+
+    source.buffer=buffer;
+    source.connect(gain);
+    gain.connect(master);
+
+    if(firstPass){
+      gain.gain.setValueAtTime(1,when);
+    }else{
+      gain.gain.setValueAtTime(0,when);
+      gain.gain.linearRampToValueAtTime(
+        1,
+        when+crossfade
+      );
+    }
+
+    const fadeOutStart=Math.max(
+      when,
+      when+duration-crossfade
+    );
+
+    gain.gain.setValueAtTime(1,fadeOutStart);
+    gain.gain.linearRampToValueAtTime(
+      0,
+      when+duration
+    );
+
+    source.start(
+      when,
+      startOffset,
+      duration
+    );
+
+    source.stop(
+      when+duration+0.03
+    );
+
+    const entry={source,gain};
+    seeding4ScheduledNodes.push(entry);
+
+    source.onended=()=>{
+      removeFinishedSeeding4Node(source);
+    };
+
+    return true;
+  }
+
+  function fillSeeding4Schedule(){
+    if(!seedingLoopActive) return;
+    if(!seeding4LoopConfig) return;
+
+    const audioContext=ctx();
+    const {
+      interval,
+      duration
+    }=seeding4LoopConfig;
+
+    const horizon=
+      audioContext.currentTime
+      +Math.max(
+        SEEDING4_SCHEDULE_AHEAD_SECONDS,
+        duration*2
+      );
+
+    while(seeding4NextStartTime<horizon){
+      const firstPass=
+        seeding4LoopConfig.scheduledPasses===0;
+
+      const scheduled=scheduleOneSeeding4Pass(
+        seeding4NextStartTime,
+        {firstPass}
+      );
+
+      if(!scheduled) return;
+
+      seeding4LoopConfig.scheduledPasses+=1;
+      seeding4NextStartTime+=interval;
+    }
+
+    const nextDelayMs=Math.max(
+      60,
+      Math.min(
+        350,
+        interval*400
+      )
+    );
+
+    seeding4ScheduleTimer=setTimeout(
+      fillSeeding4Schedule,
+      nextDelayMs
+    );
+  }
+
   /*
    * seeding4 循环：
-   * 每次播放结束后立即播放下一遍。
-   * POPUP1-BTN3～BTN8 不会影响它；
-   * BTN9 会调用 stopSeeding() 并结束 Seed 模式。
+   *
+   * 1. 检测 decodeAudioData 后可能出现的首尾低电平填充；
+   * 2. 每一遍提前调度；
+   * 3. 相邻两遍使用 18ms 交叉淡化；
+   * 4. 不依赖 onended 临时创建下一节点。
    */
   function playNextSeeding4Loop(){
     if(!seedingLoopActive) return;
 
     const buffer=buffers.get('seeding4');
 
-    /*
-     * 只创建一次 AudioBufferSourceNode，
-     * 由 Web Audio 音频线程在同一个 AudioBuffer 内原生循环。
-     *
-     * 不再使用：
-     * onended → JavaScript 回调 → 新建节点 → 下一遍
-     */
-    const node=play(
-      'seeding4',
-      {
-        loop:true,
-        loopStart:0,
-        loopEnd:buffer?.duration
-      }
-    );
-
-    if(!node){
+    if(!buffer){
       console.warn('seeding4 无法播放');
       seedingLoopActive=false;
       seedingNode=null;
       return;
     }
 
-    seedingNode=node;
+    stopSeeding4CrossfadeLoop();
 
-    node.onended=()=>{
-      /*
-       * 原生循环不会自然结束。
-       * 这里只处理 stopSeeding() 主动停止后的节点清理。
-       */
-      if(seedingNode===node){
-        seedingNode=null;
-      }
+    const region=findSeeding4PlayableRegion(buffer);
+
+    const crossfade=Math.min(
+      SEEDING4_CROSSFADE_SECONDS,
+      Math.max(
+        0.004,
+        region.duration*0.08
+      )
+    );
+
+    const interval=region.duration-crossfade;
+
+    if(interval<=0){
+      console.warn('seeding4 可循环区间过短');
+      seedingLoopActive=false;
+      return;
+    }
+
+    seedingNode=null;
+
+    seeding4LoopConfig={
+      buffer,
+      startOffset:region.startOffset,
+      endOffset:region.endOffset,
+      duration:region.duration,
+      crossfade,
+      interval,
+      scheduledPasses:0
     };
+
+    seeding4NextStartTime=
+      ctx().currentTime+0.012;
+
+    fillSeeding4Schedule();
   }
 
   /*
@@ -3380,7 +3603,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v60_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v61_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3398,7 +3621,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=60",
+          "./sw.js?v=61",
           {updateViaCache:"none"}
         );
 
