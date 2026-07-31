@@ -479,6 +479,7 @@
     kickLine:       'assets/kick-line',
     seedRun:        'assets/seed run',
     seedHit2:       'assets/seed hit2',
+    seedBox:        'assets/seed box',
     kick:           'assets/kick',
     kickEnd:        'assets/kick-end',
     burstMode:      'assets/burst_mode',
@@ -820,6 +821,7 @@
     'kickLine',
     'seedRun',
     'seedHit2',
+    'seedBox',
     'kick',
     'kickEnd'
   ];
@@ -3247,14 +3249,14 @@
     });
 
   /*
-   * BTN8：seed hit2
+   * BTN8：seed box
    */
   document.getElementById('popup1Btn8')
     .addEventListener('click',(event)=>{
       void triggerPopup1DirectSound(
         8,
-        'seedHit2',
-        'seed hit2',
+        'seedBox',
+        'seed box',
         event
       );
     });
@@ -3590,7 +3592,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v57_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v58_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3608,7 +3610,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=57",
+          "./sw.js?v=58",
           {updateViaCache:"none"}
         );
 
