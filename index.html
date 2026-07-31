@@ -2916,6 +2916,15 @@
    */
   async function onTop1(){
     /*
+     * 必须先取得元素引用。
+     *
+     * v54 在声明 popup1 之前就访问 popup1.classList，
+     * 会触发 ReferenceError，导致 TOP1 的全部逻辑中断。
+     */
+    const popup1=document.getElementById('popup1');
+    const popup4=document.getElementById('popup4');
+
+    /*
      * 只要 POPUP1 当前打开，再按 TOP1 就只关闭弹窗。
      *
      * 这个判断必须位于整个函数最前面：
@@ -2947,9 +2956,6 @@
     }
 
     interruptRing();
-
-    const popup1=document.getElementById('popup1');
-    const popup4=document.getElementById('popup4');
 
     /*
      * 第一次按 TOP1：
@@ -3821,7 +3827,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v54_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v55_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3839,7 +3845,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=54",
+          "./sw.js?v=55",
           {updateViaCache:"none"}
         );
 
