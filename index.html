@@ -315,7 +315,7 @@
       <button class="hit circle" id="btnTop2" aria-label="TOP2"></button>
 
 
-      <!-- 顶部第三个圆形按钮：交互与第二个按钮完全相同 -->
+      <!-- TOP3：ready → ENTER → exceed charge box -->
       <button class="hit circle" id="btnTop3" aria-label="TOP3"></button>
 
 
@@ -427,6 +427,7 @@
     sReady:     'assets/s-ready',
     exceed:     'assets/exceed charge',
     exceed2:   'assets/exceed charge2',
+    exceedBox: 'assets/exceed charge box',
     release:   'assets/release',
     combo3821: 'assets/3821',
     weaponHit: 'assets/weaponHit',
@@ -567,11 +568,22 @@
   let readyArmed=false;
 
   /*
-   * ENTER 长按分支：
-   * TOP2 / TOP3 已播放 ready 后，按住 ENTER 达到 0.5 秒，
-   * 播放 enter → exceed charge2，并阻止普通 exceed charge。
+   * ENTER 待触发路线：
    *
-   * 修改此数值即可调整长按时间。
+   * null   ：没有待触发路线
+   * top1b  ：ENTER → exceed charge
+   * top2   ：ENTER → exceed charge；长按 → exceed charge2
+   * top3   ：ENTER → exceed charge box
+   */
+  let readyRoute=null;
+
+  /*
+   * ENTER 长按分支：
+   * 只用于 TOP1B / TOP2 的 ready 路线。
+   * 按住 ENTER 达到 0.5 秒：
+   * enter → exceed charge2。
+   *
+   * TOP3 不进入该长按分支。
    */
   const ENTER_LONG_PRESS_MS=500;
   let enterPressTimer=null;
@@ -770,6 +782,7 @@
   const AUXILIARY_AUDIO_KEYS=[
     'readyMetal',
     'exceed2',
+    'exceedBox',
     'weaponHit2',
     'burstMode',
     'sigleMode',
@@ -872,6 +885,7 @@
 
     transformed=true;
     readyArmed=false;
+    readyRoute=null;
 
     /*
      * complete 确认播放结束后，才解锁 TOP1。
@@ -1864,6 +1878,7 @@
        * 显式号码优先于变身后的普通 ENTER / ready 逻辑。
        */
       readyArmed=false;
+      readyRoute=null;
       startModeSequence('burst',[
         'burstMode'
       ]);
@@ -1878,6 +1893,7 @@
        * 文件名按用户确认的 sigle_mode 保留。
        */
       readyArmed=false;
+      readyRoute=null;
       startModeSequence('sigle',[
         'sigleMode'
       ]);
@@ -2216,13 +2232,17 @@
 
   function canTriggerEnterLongPress(){
     /*
-     * 只在变身完成且 TOP2 / TOP3 已进入 ready 待触发状态时生效。
-     * 106 / 103 显式号码优先，避免长按截走模式号码。
+     * 只用于 TOP1B / TOP2。
+     *
+     * TOP3 的 ENTER 路线固定为：
+     * enter → exceed charge box，
+     * 不进入 exceed charge2 长按分支。
      */
     return (
       audioReady &&
       transformed &&
       readyArmed &&
+      readyRoute!=='top3' &&
       buf!=='106' &&
       buf!=='103'
     );
@@ -2245,6 +2265,7 @@
     }
 
     readyArmed=false;
+    readyRoute=null;
 
     /*
      * 长按分支：
@@ -2253,6 +2274,41 @@
      * 此处没有 exceed，因此不会同时触发 exceed charge。
      */
     playSequence(['enter','exceed2']);
+  }
+
+  function startTop3EnterSequence(){
+    /*
+     * ENTER 立即播放。
+     * exceed charge box 在 enter 播放期间完成加载，
+     * 并且只在 enter 真正结束后开始播放。
+     */
+    const exceedBoxPromise=ensureSoundLoaded('exceedBox');
+    const enterNode=play('enter');
+
+    const playExceedBox=async()=>{
+      const loaded=await exceedBoxPromise;
+
+      if(!loaded){
+        console.warn(
+          '未找到 assets/exceed charge box.m4a'
+        );
+        return;
+      }
+
+      const node=play('exceedBox');
+
+      if(!node){
+        console.warn(
+          'exceed charge box 无法播放'
+        );
+      }
+    };
+
+    if(enterNode){
+      enterNode.onended=playExceedBox;
+    }else{
+      setTimeout(playExceedBox,180);
+    }
   }
 
   function clearEnterPressTimer(){
@@ -2346,15 +2402,29 @@
     }
 
     /*
-     * 变身后新规则：
-     * 1. 顶部第二个圆形按钮播放 ready，并进入待命状态。
-     * 2. 再按 ENTER，按顺序播放 enter → exceed。
-     * 3. 没有先按顶部第二个圆形按钮时，ENTER 只播放 enter。
+     * 变身后的 ENTER 路线：
+     *
+     * TOP1B / TOP2：
+     * enter → exceed charge
+     *
+     * TOP3：
+     * enter → exceed charge box
+     *
+     * 没有 ready 待触发状态时：
+     * 只播放 enter
      */
     if(transformed){
       if(readyArmed){
-        playSequence(['enter','exceed']);
+        const route=readyRoute;
+
         readyArmed=false;
+        readyRoute=null;
+
+        if(route==='top3'){
+          startTop3EnterSequence();
+        }else{
+          playSequence(['enter','exceed']);
+        }
       }else{
         play('enter');
       }
@@ -2448,6 +2518,7 @@
       buf='';
       resetStandBy();
       readyArmed=false;
+      readyRoute=null;
     }
   }
 
@@ -2622,6 +2693,7 @@
       transformed=false;
       resetStandBy();
       readyArmed=false;
+      readyRoute=null;
 
       /* 解除变身后，TOP1 Seed 状态重新锁定 */
       faizSeedUnlocked=false;
@@ -2965,6 +3037,7 @@
     interruptRing();
     play('sReady');
     readyArmed=true;
+    readyRoute='top1b';
   }
 
   /*
@@ -2978,6 +3051,7 @@
     interruptRing();
     play('ready');
     readyArmed=true;
+    readyRoute='top2';
   }
 
   /*
@@ -3006,6 +3080,7 @@
     }
 
     readyArmed=true;
+    readyRoute='top2';
   }
 
   function clearTop2PressTimer(){
@@ -3083,10 +3158,23 @@
   }
 
   /*
-   * TOP3 保持原来的普通 ready 逻辑。
+   * TOP3：
+   *
+   * 1. 播放原有 ready；
+   * 2. 进入 TOP3 专用 ENTER 待触发状态；
+   * 3. 提前准备 exceed charge box。
    */
   function onTop3Ready(){
-    onTop2Ready();
+    if(!audioReady) return;
+    if(!transformed) return;
+
+    interruptRing();
+    play('ready');
+
+    readyArmed=true;
+    readyRoute='top3';
+
+    void ensureSoundLoaded('exceedBox');
   }
 
   /* ------------ 绑定 ------------ */
@@ -3603,7 +3691,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v61_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v62_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3621,7 +3709,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=61",
+          "./sw.js?v=62",
           {updateViaCache:"none"}
         );
 
