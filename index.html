@@ -674,6 +674,9 @@
    * 也不会停止其他 POPUP1 按钮已经播放的短音效。
    */
   let popup1Btn7MusicAudio=null;
+  let popup1Btn7MusicFadeFrame=null;
+  let popup1Btn7MusicFading=false;
+  const POPUP1_BTN7_FADE_OUT_MS=2000;
 
 
 
@@ -1314,6 +1317,68 @@
     );
   }
 
+  function clearPopup1Btn7MusicFade(){
+    if(popup1Btn7MusicFadeFrame){
+      cancelAnimationFrame(popup1Btn7MusicFadeFrame);
+      popup1Btn7MusicFadeFrame=null;
+    }
+    popup1Btn7MusicFading=false;
+  }
+
+  function finishPopup1Btn7MusicStop(audio){
+    clearPopup1Btn7MusicFade();
+
+    try{
+      audio.pause();
+      audio.currentTime=0;
+      audio.volume=1;
+    }catch{}
+
+    if(popup1Btn7MusicAudio===audio){
+      popup1Btn7MusicAudio=null;
+    }
+  }
+
+  function fadeOutPopup1Btn7Music(audio){
+    if(!audio) return;
+    if(popup1Btn7MusicFading) return;
+
+    popup1Btn7MusicFading=true;
+
+    const startVolume=Math.max(
+      0,
+      Math.min(1,audio.volume)
+    );
+    const startTime=performance.now();
+
+    const step=(now)=>{
+      if(
+        popup1Btn7MusicAudio!==audio
+        || audio.paused
+        || audio.ended
+      ){
+        clearPopup1Btn7MusicFade();
+        return;
+      }
+
+      const progress=Math.min(
+        1,
+        (now-startTime)/POPUP1_BTN7_FADE_OUT_MS
+      );
+
+      audio.volume=startVolume*(1-progress);
+
+      if(progress>=1){
+        finishPopup1Btn7MusicStop(audio);
+        return;
+      }
+
+      popup1Btn7MusicFadeFrame=requestAnimationFrame(step);
+    };
+
+    popup1Btn7MusicFadeFrame=requestAnimationFrame(step);
+  }
+
   async function triggerPopup1Btn7Music(event){
     if(event){
       event.preventDefault();
@@ -1323,16 +1388,19 @@
     if(!canTriggerPopup1ButtonSound(7)) return;
 
     /*
-     * 同一首歌曲已在播放时不叠加第二份，
-     * 也不把它停止或重新开始。
+     * 歌曲正在播放时再次按 BTN7：
+     * 不重新播放，执行 2 秒线性淡出后停止。
      */
     if(
       popup1Btn7MusicAudio
       && !popup1Btn7MusicAudio.ended
       && !popup1Btn7MusicAudio.paused
     ){
+      fadeOutPopup1Btn7Music(popup1Btn7MusicAudio);
       return;
     }
+
+    clearPopup1Btn7MusicFade();
 
     const audio=new Audio(
       'assets/The people with no name.m4a'
@@ -1346,6 +1414,8 @@
     popup1Btn7MusicAudio=audio;
 
     const clearState=()=>{
+      clearPopup1Btn7MusicFade();
+
       if(popup1Btn7MusicAudio===audio){
         popup1Btn7MusicAudio=null;
       }
@@ -1361,14 +1431,10 @@
     try{
       await audio.play();
     }catch(error){
-      console.warn(
-        'The people with no name 无法播放：',
-        error
-      );
+      console.warn('The people with no name 无法播放：',error);
       clearState();
     }
   }
-
 
   /*
    * BTN9：停止 BTN2 的 seeding 系列并播放 seed-end。
@@ -3426,8 +3492,10 @@
     });
 
   /*
-   * BTN7：普通点击播放完整歌曲
-   * The people with no name。
+   * BTN7：
+   *
+   * 第一次点击播放完整歌曲 The people with no name。
+   * 播放中再次点击：2 秒线性淡出，然后停止并归零。
    *
    * 它不会停止或打断 BTN1 / BTN2 / BTN3 / BTN4 /
    * BTN5 / BTN6 / BTN8 / BTN9 已经播放的音效。
@@ -3779,7 +3847,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v64_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v65_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3797,7 +3865,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=64",
+          "./sw.js?v=65",
           {updateViaCache:"none"}
         );
 
