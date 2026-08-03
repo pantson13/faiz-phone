@@ -676,7 +676,16 @@
   let popup1Btn7MusicAudio=null;
   let popup1Btn7MusicFadeFrame=null;
   let popup1Btn7MusicFading=false;
+  let popup1Btn7MusicTrack=null;
+
   const POPUP1_BTN7_FADE_OUT_MS=4000;
+  const POPUP1_BTN7_LONG_PRESS_MS=500;
+
+  let popup1Btn7PressTimer=null;
+  let popup1Btn7PressPointerId=null;
+  let popup1Btn7PressStartedAt=0;
+  let popup1Btn7LongPressTriggered=false;
+  let popup1Btn7PressStartedWhilePlaying=false;
 
 
 
@@ -1325,9 +1334,23 @@
     popup1Btn7MusicFading=false;
   }
 
+  function clearPopup1Btn7PressTimer(){
+    if(popup1Btn7PressTimer){
+      clearTimeout(popup1Btn7PressTimer);
+      popup1Btn7PressTimer=null;
+    }
+  }
+
+  function isPopup1Btn7MusicPlaying(){
+    return !!(
+      popup1Btn7MusicAudio
+      && !popup1Btn7MusicAudio.ended
+      && !popup1Btn7MusicAudio.paused
+    );
+  }
+
   function finishPopup1Btn7MusicStop(audio){
     clearPopup1Btn7MusicFade();
-
     try{
       audio.pause();
       audio.currentTime=0;
@@ -1336,6 +1359,7 @@
 
     if(popup1Btn7MusicAudio===audio){
       popup1Btn7MusicAudio=null;
+      popup1Btn7MusicTrack=null;
     }
   }
 
@@ -1344,11 +1368,7 @@
     if(popup1Btn7MusicFading) return;
 
     popup1Btn7MusicFading=true;
-
-    const startVolume=Math.max(
-      0,
-      Math.min(1,audio.volume)
-    );
+    const startVolume=Math.max(0,Math.min(1,audio.volume));
     const startTime=performance.now();
 
     const step=(now)=>{
@@ -1365,12 +1385,8 @@
         1,
         (now-startTime)/POPUP1_BTN7_FADE_OUT_MS
       );
-
-      const eased=
-        progress*progress*(3-2*progress);
-
-      audio.volume=
-        startVolume*(1-eased);
+      const eased=progress*progress*(3-2*progress);
+      audio.volume=startVolume*(1-eased);
 
       if(progress>=1){
         finishPopup1Btn7MusicStop(audio);
@@ -1383,61 +1399,147 @@
     popup1Btn7MusicFadeFrame=requestAnimationFrame(step);
   }
 
-  async function triggerPopup1Btn7Music(event){
-    if(event){
-      event.preventDefault();
-      event.stopPropagation();
-    }
-
-    if(!canTriggerPopup1ButtonSound(7)) return;
-
-    /*
-     * 歌曲正在播放时再次按 BTN7：
-     * 不重新播放，执行约 4 秒缓慢渐隐后停止。
-     */
-    if(
-      popup1Btn7MusicAudio
-      && !popup1Btn7MusicAudio.ended
-      && !popup1Btn7MusicAudio.paused
-    ){
-      fadeOutPopup1Btn7Music(popup1Btn7MusicAudio);
-      return;
+  async function startPopup1Btn7Music({url,track,label}){
+    /* 两条 BTN7 音乐路线严格互斥。 */
+    if(isPopup1Btn7MusicPlaying() || popup1Btn7MusicFading){
+      return false;
     }
 
     clearPopup1Btn7MusicFade();
 
-    const audio=new Audio(
-      'assets/The people with no name.m4a'
-    );
-
+    const audio=new Audio(url);
     audio.preload='auto';
     audio.volume=1;
     audio.loop=false;
     audio.playsInline=true;
 
     popup1Btn7MusicAudio=audio;
+    popup1Btn7MusicTrack=track;
 
     const clearState=()=>{
       clearPopup1Btn7MusicFade();
-
       if(popup1Btn7MusicAudio===audio){
         popup1Btn7MusicAudio=null;
+        popup1Btn7MusicTrack=null;
       }
     };
 
     audio.addEventListener('ended',clearState,{once:true});
-
     audio.addEventListener('error',()=>{
-      console.warn('The people with no name 加载或播放失败');
+      console.warn(`${label} 加载或播放失败`);
       clearState();
     },{once:true});
 
     try{
       await audio.play();
+      return true;
     }catch(error){
-      console.warn('The people with no name 无法播放：',error);
+      console.warn(`${label} 无法播放：`,error);
       clearState();
+      return false;
     }
+  }
+
+  function startPopup1Btn7ShortMusic(){
+    void startPopup1Btn7Music({
+      url:'assets/The people with no name.m4a',
+      track:'short',
+      label:'The people with no name'
+    });
+  }
+
+  function startPopup1Btn7LongMusic(){
+    void startPopup1Btn7Music({
+      url:'assets/The people with no name2.m4a',
+      track:'long',
+      label:'The people with no name2'
+    });
+  }
+
+  function onPopup1Btn7PointerDown(event){
+    event.stopPropagation();
+    if(event.pointerType==='mouse' && event.button!==0) return;
+    if(popup1Btn7PressPointerId!==null) return;
+    if(!canTriggerPopup1ButtonSound(7)) return;
+
+    popup1Btn7PressPointerId=event.pointerId;
+    popup1Btn7PressStartedAt=performance.now();
+    popup1Btn7LongPressTriggered=false;
+    popup1Btn7PressStartedWhilePlaying=
+      isPopup1Btn7MusicPlaying() || popup1Btn7MusicFading;
+
+    try{
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }catch{}
+
+    clearPopup1Btn7PressTimer();
+
+    /* 播放中按下时，本次按压只允许“短按停止”，不建立长按第二首计时器。 */
+    if(popup1Btn7PressStartedWhilePlaying) return;
+
+    popup1Btn7PressTimer=setTimeout(()=>{
+      popup1Btn7PressTimer=null;
+      if(popup1Btn7PressPointerId!==event.pointerId) return;
+      if(isPopup1Btn7MusicPlaying() || popup1Btn7MusicFading) return;
+
+      popup1Btn7LongPressTriggered=true;
+      startPopup1Btn7LongMusic();
+    },POPUP1_BTN7_LONG_PRESS_MS);
+  }
+
+  function finishPopup1Btn7Pointer(event,{cancelled=false}={}){
+    event.stopPropagation();
+    if(popup1Btn7PressPointerId!==event.pointerId) return;
+
+    clearPopup1Btn7PressTimer();
+
+    const heldMs=performance.now()-popup1Btn7PressStartedAt;
+    const startedWhilePlaying=popup1Btn7PressStartedWhilePlaying;
+    const wasLongPress=popup1Btn7LongPressTriggered;
+
+    popup1Btn7PressPointerId=null;
+    popup1Btn7PressStartedAt=0;
+    popup1Btn7LongPressTriggered=false;
+    popup1Btn7PressStartedWhilePlaying=false;
+
+    try{
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }catch{}
+
+    if(cancelled) return;
+
+    /* 任意一首播放时，只有短按 BTN7 才执行渐隐停止；长按什么都不触发。 */
+    if(startedWhilePlaying){
+      if(
+        heldMs<POPUP1_BTN7_LONG_PRESS_MS
+        && isPopup1Btn7MusicPlaying()
+        && !popup1Btn7MusicFading
+      ){
+        fadeOutPopup1Btn7Music(popup1Btn7MusicAudio);
+      }
+      return;
+    }
+
+    /* 空闲状态下长按成功后，松手不补第一首。 */
+    if(wasLongPress) return;
+
+    /* 未满 0.5 秒就是短按第一首。 */
+    if(
+      heldMs<POPUP1_BTN7_LONG_PRESS_MS
+      && !isPopup1Btn7MusicPlaying()
+      && !popup1Btn7MusicFading
+    ){
+      startPopup1Btn7ShortMusic();
+    }
+  }
+
+  function onPopup1Btn7PointerUp(event){
+    event.preventDefault();
+    finishPopup1Btn7Pointer(event);
+  }
+
+  function onPopup1Btn7PointerCancel(event){
+    finishPopup1Btn7Pointer(event,{cancelled:true});
   }
 
   /*
@@ -3496,18 +3598,53 @@
     });
 
   /*
-   * BTN7：
+   * BTN7 空闲：
+   * - 短按：The people with no name
+   * - 长按 0.5 秒：The people with no name2
    *
-   * 第一次点击播放完整歌曲 The people with no name。
-   * 播放中再次点击：约 4 秒缓慢渐隐，然后停止并归零。
-   *
-   * 它不会停止或打断 BTN1 / BTN2 / BTN3 / BTN4 /
-   * BTN5 / BTN6 / BTN8 / BTN9 已经播放的音效。
+   * 任意一首播放期间：
+   * - 另一条路线锁定
+   * - 只有再次短按 BTN7 才执行约 4 秒缓慢渐隐停止
+   * - 长按不会触发另一首，也不会停止当前歌曲
    */
-  document.getElementById('popup1Btn7')
-    .addEventListener('click',(event)=>{
-      void triggerPopup1Btn7Music(event);
-    });
+  const popup1Btn7=document.getElementById('popup1Btn7');
+
+  popup1Btn7.addEventListener('pointerdown',onPopup1Btn7PointerDown);
+  popup1Btn7.addEventListener('pointerup',onPopup1Btn7PointerUp);
+  popup1Btn7.addEventListener('pointercancel',onPopup1Btn7PointerCancel);
+
+  popup1Btn7.addEventListener('lostpointercapture',()=>{
+    clearPopup1Btn7PressTimer();
+    popup1Btn7PressPointerId=null;
+    popup1Btn7PressStartedAt=0;
+    popup1Btn7LongPressTriggered=false;
+    popup1Btn7PressStartedWhilePlaying=false;
+  });
+
+  popup1Btn7.addEventListener('contextmenu',(event)=>{
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  /* 键盘/脚本 click 按普通短按处理。 */
+  popup1Btn7.addEventListener('click',(event)=>{
+    if(event.detail!==0){
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if(!canTriggerPopup1ButtonSound(7)) return;
+
+    if(isPopup1Btn7MusicPlaying() && !popup1Btn7MusicFading){
+      fadeOutPopup1Btn7Music(popup1Btn7MusicAudio);
+      return;
+    }
+
+    if(!popup1Btn7MusicFading){
+      startPopup1Btn7ShortMusic();
+    }
+  });
 
   /*
    * BTN8：seed box
@@ -3851,7 +3988,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v66_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v67_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3869,7 +4006,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=66",
+          "./sw.js?v=67",
           {updateViaCache:"none"}
         );
 
