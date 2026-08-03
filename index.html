@@ -676,7 +676,7 @@
   let popup1Btn7MusicAudio=null;
   let popup1Btn7MusicFadeFrame=null;
   let popup1Btn7MusicFading=false;
-  const POPUP1_BTN7_FADE_OUT_MS=2000;
+  const POPUP1_BTN7_FADE_OUT_MS=4000;
 
 
 
@@ -1366,7 +1366,11 @@
         (now-startTime)/POPUP1_BTN7_FADE_OUT_MS
       );
 
-      audio.volume=startVolume*(1-progress);
+      const eased=
+        progress*progress*(3-2*progress);
+
+      audio.volume=
+        startVolume*(1-eased);
 
       if(progress>=1){
         finishPopup1Btn7MusicStop(audio);
@@ -1389,7 +1393,7 @@
 
     /*
      * 歌曲正在播放时再次按 BTN7：
-     * 不重新播放，执行 2 秒线性淡出后停止。
+     * 不重新播放，执行约 4 秒缓慢渐隐后停止。
      */
     if(
       popup1Btn7MusicAudio
@@ -3495,7 +3499,7 @@
    * BTN7：
    *
    * 第一次点击播放完整歌曲 The people with no name。
-   * 播放中再次点击：2 秒线性淡出，然后停止并归零。
+   * 播放中再次点击：约 4 秒缓慢渐隐，然后停止并归零。
    *
    * 它不会停止或打断 BTN1 / BTN2 / BTN3 / BTN4 /
    * BTN5 / BTN6 / BTN8 / BTN9 已经播放的音效。
@@ -3847,7 +3851,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v65_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v66_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -3865,7 +3869,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=65",
+          "./sw.js?v=66",
           {updateViaCache:"none"}
         );
 
