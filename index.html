@@ -351,6 +351,13 @@
   .x-visual-backdrop.show{
     opacity:1;
   }
+
+  /* 调位置临时显示版：x1 / x2 常驻显示。
+   * 调整完成后删除这条规则和 HTML 上的 x-visual-adjust-visible 类即可恢复隐藏。
+   */
+  .x-visual-adjust-visible{
+    opacity:1 !important;
+  }
   .x-visual-box img{
     position:absolute;
     display:block;
@@ -386,8 +393,8 @@
     <div class="phone" id="phone">
       <img src="assets/ui.jpg" alt="FAIZ UI" id="ui"/>
 
-      <div class="x-visual-backdrop" id="xVisualBackdrop" aria-hidden="true"></div>
-      <div class="x-visual-box" id="xVisualBox" aria-hidden="true">
+      <div class="x-visual-backdrop x-visual-adjust-visible" id="xVisualBackdrop" aria-hidden="true"></div>
+      <div class="x-visual-box x-visual-adjust-visible" id="xVisualBox" aria-hidden="true">
         <img class="x-visual-x1" src="assets/x1.png" alt="x1"/>
         <img class="x-visual-x2" src="assets/x2.png" alt="x2"/>
       </div>
@@ -4110,7 +4117,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v69_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v70_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -4128,7 +4135,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=69",
+          "./sw.js?v=70",
           {updateViaCache:"none"}
         );
 
