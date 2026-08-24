@@ -1,5 +1,5 @@
 /*
- * FAIZ v68：网络直通、无持久缓存 Service Worker
+ * FAIZ v69：网络直通、无持久缓存 Service Worker
  * 不创建程序、短音效或歌曲缓存。
  */
 
