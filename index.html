@@ -326,7 +326,7 @@
 
   /* 555 视觉层：背景虚化 + x1 + x2 显示 / 消失频闪 */
   .x-visual-backdrop{
-    position:absolute;
+    position:fixed;
     inset:0;
     z-index:110;
     opacity:0;
@@ -335,6 +335,7 @@
     backdrop-filter:blur(8px);
     -webkit-backdrop-filter:blur(8px);
     transition:opacity .18s ease;
+    touch-action:manipulation;
   }
   .x-visual-box{
     position:absolute;
@@ -350,13 +351,10 @@
   .x-visual-backdrop.show{
     opacity:1;
   }
-
-  /* x1 / x2 调位置测试版：当前继续常驻显示。
-   * 调整完成后删除这条规则和 HTML 上的 x-visual-adjust-visible 类即可恢复隐藏。
-   */
-  .x-visual-adjust-visible{
-    opacity:1 !important;
+  .x-visual-backdrop.show{
+    pointer-events:auto;
   }
+
   .x-visual-box img{
     position:absolute;
     display:block;
@@ -397,8 +395,8 @@
     <div class="phone" id="phone">
       <img src="assets/ui.jpg" alt="FAIZ UI" id="ui"/>
 
-      <div class="x-visual-backdrop x-visual-adjust-visible" id="xVisualBackdrop" aria-hidden="true"></div>
-      <div class="x-visual-box x-visual-adjust-visible" id="xVisualBox" aria-hidden="true">
+      <div class="x-visual-backdrop" id="xVisualBackdrop" aria-hidden="true"></div>
+      <div class="x-visual-box" id="xVisualBox" aria-hidden="true">
         <img class="x-visual-x1" src="assets/x1.png" alt="x1"/>
         <img class="x-visual-x2" src="assets/x2.png" alt="x2"/>
       </div>
@@ -1085,9 +1083,35 @@
     if(backdrop) backdrop.classList.add('show');
     if(box) box.classList.add('show');
 
+    /*
+     * 保留原来的 2 秒自动退场。
+     * 用户也可以在这 2 秒内点击屏幕任意位置提前关闭。
+     */
     xVisualTimer=setTimeout(()=>{
       hide555Visual();
     },2000);
+  }
+
+  const xVisualBackdrop=
+    document.getElementById('xVisualBackdrop');
+
+  if(xVisualBackdrop){
+    xVisualBackdrop.addEventListener(
+      'pointerdown',
+      (event)=>{
+        if(!xVisualBackdrop.classList.contains('show')) return;
+
+        /*
+         * backdrop 是全屏层。
+         * x1 / x2 本身 pointer-events:none，
+         * 所以点 x1、x2 或屏幕其他位置都会落到这里。
+         * 阻止事件继续传给手机按钮，避免关闭时误触。
+         */
+        event.preventDefault();
+        event.stopPropagation();
+        hide555Visual();
+      }
+    );
   }
 
 
@@ -4121,7 +4145,7 @@
  * 确保页面不再继续由 v45 / v46 的旧 worker 控制。
  */
 if ("serviceWorker" in navigator) {
-  const SW_RELOAD_KEY='faiz_sw_v73_reloaded';
+  const SW_RELOAD_KEY='faiz_sw_v74_reloaded';
 
   navigator.serviceWorker.addEventListener(
     'controllerchange',
@@ -4139,7 +4163,7 @@ if ("serviceWorker" in navigator) {
     try{
       const registration=
         await navigator.serviceWorker.register(
-          "./sw.js?v=73",
+          "./sw.js?v=74",
           {updateViaCache:"none"}
         );
 
